@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'p5519';
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 function seed() { return require('../domain/plan').createInitialState(); }
 

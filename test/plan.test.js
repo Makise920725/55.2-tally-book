@@ -5,6 +5,7 @@ const { countPayableWorkdays } = require('../miniprogram/domain/calendar');
 const { CONFIG, derivePeriods } = require('../miniprogram/domain/plan');
 const { createExpense, remainingDailyBudget } = require('../miniprogram/domain/ledger');
 const { migrate, SCHEMA_VERSION } = require('../miniprogram/utils/storage');
+const { exportLedgerCsv } = require('../miniprogram/utils/csv');
 
 test('金额使用整数分并正确格式化', () => {
   assert.equal(yuanToFen(55.19), 5519);
@@ -37,4 +38,10 @@ test('旧 storage 可以迁移到当前 schema', () => {
   assert.equal(state.schemaVersion, SCHEMA_VERSION);
   assert.deepEqual(state.ledger.transfers, []);
   assert.equal(state.categories.length, 8);
+});
+
+test('账本可以导出为带 BOM 的 CSV', () => {
+  const csv = exportLedgerCsv({ categories: [{ id: 'meal', name: '吃饭' }], ledger: { expenses: [{ date: '2026-09-12', category: 'meal', amount: 1500, note: '午饭,面' }], transfers: [], adjusts: [] } });
+  assert.ok(csv.startsWith('\ufeff日期,类型'));
+  assert.match(csv, /"午饭,面"/);
 });
