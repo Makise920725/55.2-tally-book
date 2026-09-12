@@ -15,6 +15,7 @@ function migrate(state) {
   next.daySlots = next.daySlots || {};
   next.paydaySteps = next.paydaySteps || {};
   next.executedPaydays = next.executedPaydays || {};
+  next.periods = next.periods || require('../domain/plan').derivePeriods({ dailyBudget: next.config.dailyBudget });
   next.mode = next.mode || 'daily';
   next.openingBalances = next.openingBalances || { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 };
   next.schemaVersion = SCHEMA_VERSION;

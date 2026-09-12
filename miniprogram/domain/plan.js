@@ -74,7 +74,7 @@ function daysFrom(start, date) {
 }
 
 function createInitialState() {
-  return { version: 1, schemaVersion: 4, config: { ...CONFIG, scenario: '中' }, mode: 'daily', categories: DEFAULT_CATEGORIES, openingBalances: { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 }, daySlots: {}, paydaySteps: {}, executedPaydays: {}, ledger: { expenses: [], transfers: [], specials: [], adjusts: [] } };
+  return { version: 1, schemaVersion: 4, config: { ...CONFIG, scenario: '中' }, periods: derivePeriods(), mode: 'daily', categories: DEFAULT_CATEGORIES, openingBalances: { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 }, daySlots: {}, paydaySteps: {}, executedPaydays: {}, ledger: { expenses: [], transfers: [], specials: [], adjusts: [] } };
 }
 
 module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, SCENARIOS, allocationForMode, progressToTarget, daysUntil, derivePeriods, periodForDate, isPlanStarted, daysFrom, createInitialState };
