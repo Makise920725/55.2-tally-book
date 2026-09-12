@@ -150,3 +150,9 @@ test('当前日期可自动定位到对应期次', () => {
   assert.equal(periodForDate('2026-11-26', derivePeriods()).index, 3);
   assert.equal(periodForDate('2026-09-12', derivePeriods()).index, 1);
 });
+
+test('预算情景最终目标随日额度动态变化', () => {
+  assert.equal(derivePeriods({ dailyBudget: 4829 }).at(-1).pocketAfter, 1292324);
+  assert.equal(derivePeriods({ dailyBudget: 5519 }).at(-1).pocketAfter, 1199174);
+  assert.equal(derivePeriods({ dailyBudget: 6373 }).at(-1).pocketAfter, 1083884);
+});

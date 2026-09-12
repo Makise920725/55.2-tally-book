@@ -10,7 +10,8 @@ Page({
   onUnload() { if (this.unsubscribe) this.unsubscribe(); },
   refresh() {
     const state = store.getState();
-    this.setData({ config: { ...state.config, dailyBudget: formatFen(state.config.dailyBudget), goalMinimum: formatFen(state.config.goalMinimum), targetSavings: formatFen(state.config.targetSavings) }, expenseCount: state.ledger.expenses.length, mode: state.mode || 'daily', categories: state.categories });
+    const targetSavings = state.periods.at(-1).pocketAfter;
+    this.setData({ config: { ...state.config, dailyBudget: formatFen(state.config.dailyBudget), goalMinimum: formatFen(state.config.goalMinimum), targetSavings: formatFen(targetSavings) }, expenseCount: state.ledger.expenses.length, mode: state.mode || 'daily', categories: state.categories });
   },
   exportCsv() {
     const csv = exportLedgerCsv(store.getState());

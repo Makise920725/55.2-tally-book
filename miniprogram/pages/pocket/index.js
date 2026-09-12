@@ -4,7 +4,7 @@ const { accountBalances, ACCT, sum } = require('../../domain/ledger');
 const store = require('../../store/store');
 
 Page({
-  data: { current: '', target: '', goal: '', goalProgress: 0, targetProgress: 0, daysLeft: 0, bankBalance: '0.00', poolBalance: '0.00', pocketBalance: '0.00', specialReason: '', specialAmount: '', periods: [] },
+  data: { current: '', target: '', goal: '', goalProgress: 0, goalMarker: 0, targetProgress: 0, daysLeft: 0, bankBalance: '0.00', poolBalance: '0.00', pocketBalance: '0.00', specialReason: '', specialAmount: '', periods: [] },
   onLoad() { this.unsubscribe = store.subscribe(() => this.refresh()); this.refresh(); },
   onUnload() { if (this.unsubscribe) this.unsubscribe(); },
   refresh() {
@@ -24,7 +24,8 @@ Page({
     }; });
     const currentFen = accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials)[ACCT.POCKET3];
     const balances = accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials);
-    this.setData({ current: formatFen(currentFen), target: formatFen(CONFIG.targetSavings), goal: formatFen(CONFIG.goalMinimum), goalProgress: progressToTarget(currentFen, CONFIG.goalMinimum).toFixed(1), targetProgress: progressToTarget(currentFen, CONFIG.targetSavings).toFixed(1), daysLeft: Math.max(0, daysUntil(CONFIG.deadline)), bankBalance: formatFen(balances[ACCT.BANK1]), poolBalance: formatFen(balances[ACCT.POOL2]), pocketBalance: formatFen(balances[ACCT.POCKET3]), periods });
+    const targetFen = periods.at(-1).pocketAfter;
+    this.setData({ current: formatFen(currentFen), target: formatFen(targetFen), goal: formatFen(CONFIG.goalMinimum), goalProgress: progressToTarget(currentFen, targetFen).toFixed(1), goalMarker: progressToTarget(CONFIG.goalMinimum, targetFen).toFixed(1), targetProgress: progressToTarget(currentFen, targetFen).toFixed(1), daysLeft: Math.max(0, daysUntil(CONFIG.deadline)), bankBalance: formatFen(balances[ACCT.BANK1]), poolBalance: formatFen(balances[ACCT.POOL2]), pocketBalance: formatFen(balances[ACCT.POCKET3]), periods });
   }
   ,inputSpecialReason(event) { this.setData({ specialReason: event.detail.value }); }
   ,inputSpecialAmount(event) { this.setData({ specialAmount: event.detail.value }); }
