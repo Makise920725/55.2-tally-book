@@ -60,7 +60,7 @@ function derivePeriods() {
 }
 
 function createInitialState() {
-  return { version: 1, schemaVersion: 4, config: CONFIG, mode: 'daily', categories: DEFAULT_CATEGORIES, daySlots: {}, paydaySteps: {}, ledger: { expenses: [], transfers: [], adjusts: [] } };
+  return { version: 1, schemaVersion: 4, config: CONFIG, mode: 'daily', categories: DEFAULT_CATEGORIES, openingBalances: { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 }, daySlots: {}, paydaySteps: {}, ledger: { expenses: [], transfers: [], adjusts: [] } };
 }
 
 module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, allocationForMode, progressToTarget, daysUntil, derivePeriods, createInitialState };

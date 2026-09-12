@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { yuanToFen, formatFen } = require('../miniprogram/domain/money');
 const { countPayableWorkdays } = require('../miniprogram/domain/calendar');
 const { CONFIG, derivePeriods, allocationForMode, progressToTarget, daysUntil } = require('../miniprogram/domain/plan');
-const { createExpense, remainingDailyBudget, dailySeries } = require('../miniprogram/domain/ledger');
+const { createExpense, createTransfer, remainingDailyBudget, dailySeries, accountBalances, ACCT } = require('../miniprogram/domain/ledger');
 const { migrate, SCHEMA_VERSION } = require('../miniprogram/utils/storage');
 const { exportLedgerCsv } = require('../miniprogram/utils/csv');
 
@@ -62,4 +62,13 @@ test('本期每日柱状数据按日期生成', () => {
   assert.deepEqual(series.map(item => item.date), ['2026-09-24', '2026-09-25']);
   assert.equal(series[0].over, true);
   assert.equal(series[1].used, false);
+});
+
+test('账户余额由划转和支出流水派生', () => {
+  const transfer = createTransfer({ id: 't', date: '2026-09-12', from: ACCT.BANK1, to: ACCT.POCKET3, amount: 10000, kind: 'payday_save' });
+  const expense = createExpense({ id: 'e', date: '2026-09-12', category: 'meal', amount: 1500 });
+  const balances = accountBalances([transfer], [expense], { BANK1: 50000, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 });
+  assert.equal(balances.BANK1, 38500);
+  assert.equal(balances.POCKET3, 10000);
+  assert.equal(balances.OUT, 1500);
 });
