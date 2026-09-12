@@ -12,6 +12,7 @@ function migrate(state) {
   next.ledger.adjusts = next.ledger.adjusts || [];
   next.categories = next.categories || require('../domain/plan').DEFAULT_CATEGORIES;
   next.daySlots = next.daySlots || {};
+  next.paydaySteps = next.paydaySteps || {};
   next.schemaVersion = SCHEMA_VERSION;
   return next;
 }

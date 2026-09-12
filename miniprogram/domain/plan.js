@@ -44,7 +44,7 @@ function derivePeriods() {
 }
 
 function createInitialState() {
-  return { version: 1, schemaVersion: 3, config: CONFIG, periods: derivePeriods(), categories: DEFAULT_CATEGORIES, daySlots: {}, ledger: { expenses: [], transfers: [], adjusts: [] } };
+  return { version: 1, schemaVersion: 3, config: CONFIG, periods: derivePeriods(), categories: DEFAULT_CATEGORIES, daySlots: {}, paydaySteps: {}, ledger: { expenses: [], transfers: [], adjusts: [] } };
 }
 
 module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, derivePeriods, createInitialState };

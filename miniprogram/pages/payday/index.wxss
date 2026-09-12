@@ -1,1 +1,7 @@
-.card view { padding: 18rpx 0; border-bottom: 1rpx solid #ebe7dc; }
+.sop-row { display: flex; align-items: flex-start; gap: 18rpx; padding: 22rpx 0; border-bottom: 1rpx solid var(--line); }
+.sop-row:last-of-type { border-bottom: 0; }
+.check { width: 36rpx; height: 36rpx; border: 2rpx solid var(--rule); border-radius: 50%; color: #fff; text-align: center; line-height: 36rpx; flex-shrink: 0; }
+.done .check { border-color: var(--ink); background: var(--ink); }
+.done .sop-copy { opacity: .42; }
+.sop-copy { flex: 1; font-size: 26rpx; line-height: 1.5; }
+.wx-value { margin-top: 5rpx; }

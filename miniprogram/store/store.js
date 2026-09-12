@@ -33,4 +33,11 @@ function settleDay({ date, dailyBudget }) {
 
 function reset() { state = storage.seed(); storage.persist(state); notify(); return state; }
 
-module.exports = { getState, subscribe, addExpense, settleDay, reset };
+function togglePaydayStep(periodIndex, step) {
+  const current = getState();
+  const key = `${periodIndex}-${step}`;
+  const paydaySteps = { ...(current.paydaySteps || {}), [key]: !(current.paydaySteps || {})[key] };
+  return commit({ ...current, paydaySteps });
+}
+
+module.exports = { getState, subscribe, addExpense, settleDay, togglePaydayStep, reset };

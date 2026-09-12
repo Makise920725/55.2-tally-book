@@ -1,1 +1,2 @@
 .period-card { padding-top: 12rpx; }
+.section-label { margin: 34rpx 0 18rpx; color: var(--dim); font-size: 22rpx; letter-spacing: 2rpx; }
