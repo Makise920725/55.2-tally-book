@@ -101,3 +101,20 @@ test('计划从 2026-09-24 开始，之前不应记账', () => {
   assert.equal(isPlanStarted('2026-09-24'), true);
   assert.equal(daysFrom('2026-09-24', '2026-09-27'), 3);
 });
+
+test('发薪执行和专项支出会写入可追溯流水', () => {
+  global.wx = { getStorageSync: () => null, setStorageSync: () => {}, removeStorageSync: () => {} };
+  store.reset();
+  const payday = store.executePayday(1);
+  assert.equal(payday.state.ledger.transfers.filter(item => item.kind === 'payday_save').length, 1);
+  assert.equal(store.executePayday(1).alreadyExecuted, true);
+  store.addSpecial({ date: '2026-12-25', reason: 'Q4水电', amountYuan: 405.88 });
+  assert.equal(store.getState().ledger.specials[0].amount, 40588);
+});
+
+test('预算情景切换会重算每日额度和五期预算', () => {
+  store.setScenario('省');
+  assert.equal(store.getState().config.dailyBudget, 4829);
+  assert.equal(store.getState().periods[0].budgetToPool, 4829 * 29);
+  store.setScenario('中');
+});

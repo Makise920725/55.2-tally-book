@@ -4,3 +4,6 @@
 .scenario-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12rpx; }
 .scenario { margin: 0; padding: 18rpx 4rpx; border: 1rpx solid var(--line); border-radius: 18rpx; background: var(--paper); color: var(--ink-2); font-size: 22rpx; }
 .scenario.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+.account-picker { padding: 22rpx; border: 1rpx solid var(--line); border-radius: 18rpx; background: var(--paper); color: var(--ink-2); }
+.category-admin { display: flex; justify-content: space-between; padding: 16rpx 0; border-bottom: 1rpx solid var(--line); font-size: 24rpx; }
+.delete-category { color: var(--dim); }

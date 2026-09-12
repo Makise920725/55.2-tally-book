@@ -121,4 +121,16 @@ function allocateDay({ date }) {
   return { ...commit({ ...current, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }), transfer };
 }
 
-module.exports = { getState, subscribe, addExpense, settleDay, reopenDay, togglePaydayStep, executePayday, addSpecial, setMode, setScenario, allocateDay, addAdjust, reset };
+function addCategory({ id, name, mark }) {
+  const current = getState();
+  if (!id || !name || current.categories.some(item => item.id === id)) return { state: current, persisted: true, blocked: 'duplicate' };
+  return commit({ ...current, categories: [...current.categories, { id, name, mark: mark || name.slice(0, 1), custom: true }] });
+}
+
+function removeCategory(id) {
+  const current = getState();
+  if (current.ledger.expenses.some(item => item.category === id)) return { state: current, persisted: true, blocked: 'used' };
+  return commit({ ...current, categories: current.categories.filter(item => item.id !== id) });
+}
+
+module.exports = { getState, subscribe, addExpense, settleDay, reopenDay, togglePaydayStep, executePayday, addSpecial, setMode, setScenario, allocateDay, addCategory, removeCategory, addAdjust, reset };

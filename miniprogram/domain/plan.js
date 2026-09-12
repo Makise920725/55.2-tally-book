@@ -13,10 +13,10 @@ const CONFIG = Object.freeze({
 
 const BILL_TOTALS = Object.freeze([184432, 137661, 92829, 83652, 72259]);
 const DEFAULT_CATEGORIES = Object.freeze([
-  { id: 'meal', name: '吃饭', mark: '食' }, { id: 'cat', name: '猫', mark: '猫' },
-  { id: 'daily', name: '日用', mark: '用' }, { id: 'snack', name: '零食', mark: '零' },
-  { id: 'charge', name: '充电', mark: '电' }, { id: 'cloth', name: '衣物', mark: '衣' },
-  { id: 'fun', name: '娱乐', mark: '娱' }, { id: 'other', name: '其他', mark: '杂' }
+  { id: 'meal', name: '吃饭', mark: '食', custom: false }, { id: 'cat', name: '猫', mark: '猫', custom: false },
+  { id: 'daily', name: '日用', mark: '用', custom: false }, { id: 'snack', name: '零食', mark: '零', custom: false },
+  { id: 'charge', name: '充电', mark: '电', custom: false }, { id: 'cloth', name: '衣物', mark: '衣', custom: false },
+  { id: 'fun', name: '娱乐', mark: '娱', custom: false }, { id: 'other', name: '其他', mark: '杂', custom: false }
 ]);
 const SCENARIOS = Object.freeze({ 省: 4829, 中: 5519, 松: 6373 });
 
