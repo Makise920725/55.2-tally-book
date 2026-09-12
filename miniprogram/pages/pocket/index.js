@@ -1,9 +1,9 @@
-const { CONFIG, derivePeriods } = require('../../domain/plan');
+const { CONFIG, derivePeriods, progressToTarget, daysUntil } = require('../../domain/plan');
 const { formatFen } = require('../../domain/money');
 const store = require('../../store/store');
 
 Page({
-  data: { current: '', target: '', goal: '', periods: [] },
+  data: { current: '', target: '', goal: '', goalProgress: 0, targetProgress: 0, daysLeft: 0, periods: [] },
   onLoad() { this.unsubscribe = store.subscribe(() => this.refresh()); this.refresh(); },
   onUnload() { if (this.unsubscribe) this.unsubscribe(); },
   refresh() {
@@ -15,6 +15,7 @@ Page({
       special: item.specialOut ? `专项 −¥${formatFen(item.specialOut)}` : '无专项支出',
       completed: Object.keys(state.paydaySteps || {}).filter(key => key.indexOf(`${item.index}-`) === 0 && state.paydaySteps[key]).length === 5
     }));
-    this.setData({ current: formatFen(periods.at(-1).pocketAfter), target: formatFen(CONFIG.targetSavings), goal: formatFen(CONFIG.goalMinimum), periods });
+    const currentFen = periods.at(-1).pocketAfter;
+    this.setData({ current: formatFen(currentFen), target: formatFen(CONFIG.targetSavings), goal: formatFen(CONFIG.goalMinimum), goalProgress: progressToTarget(currentFen, CONFIG.goalMinimum).toFixed(1), targetProgress: progressToTarget(currentFen, CONFIG.targetSavings).toFixed(1), daysLeft: Math.max(0, daysUntil(CONFIG.deadline)), periods });
   }
 });

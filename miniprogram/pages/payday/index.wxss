@@ -5,3 +5,4 @@
 .done .sop-copy { opacity: .42; }
 .sop-copy { flex: 1; font-size: 26rpx; line-height: 1.5; }
 .wx-value { margin-top: 5rpx; }
+.button-complete { background: var(--paper); color: var(--ink); border: 1rpx solid var(--line); }

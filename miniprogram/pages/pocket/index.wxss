@@ -1,1 +1,2 @@
-.amount { color: #8b6b2e; }
+.amount { color: var(--ink); }
+.target-line { display: flex; justify-content: space-between; color: var(--dim); font-family: "Noto Serif SC", "Songti SC", serif; font-size: 21rpx; }

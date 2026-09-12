@@ -22,6 +22,18 @@ function allocationForMode(dailyBudget, mode) {
   return mode === 'three-day' ? dailyBudget * 3 : dailyBudget;
 }
 
+function progressToTarget(balance, target) {
+  if (!Number.isInteger(balance) || !Number.isInteger(target) || target <= 0) throw new TypeError('balance and target must be positive integer cents');
+  return Math.max(0, Math.min(100, (balance / target) * 100));
+}
+
+function daysUntil(deadline, from = new Date()) {
+  const [year, month, day] = deadline.split('-').map(Number);
+  const target = Date.UTC(year, month - 1, day);
+  const current = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
+  return Math.ceil((target - current) / 86400000);
+}
+
 const PERIOD_INPUTS = Object.freeze([
   ['2026-09-24', '2026-09-25', '2026-08-21', '2026-09-20', '2026-10-22', 29, 0],
   ['2026-10-23', '2026-10-25', '2026-09-21', '2026-10-20', '2026-11-24', 33, 0],
@@ -51,4 +63,4 @@ function createInitialState() {
   return { version: 1, schemaVersion: 4, config: CONFIG, mode: 'daily', categories: DEFAULT_CATEGORIES, daySlots: {}, paydaySteps: {}, ledger: { expenses: [], transfers: [], adjusts: [] } };
 }
 
-module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, allocationForMode, derivePeriods, createInitialState };
+module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, allocationForMode, progressToTarget, daysUntil, derivePeriods, createInitialState };
