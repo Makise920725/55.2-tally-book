@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { yuanToFen, formatFen } = require('../miniprogram/domain/money');
 const { countPayableWorkdays } = require('../miniprogram/domain/calendar');
-const { CONFIG, derivePeriods, allocationForMode, progressToTarget, daysUntil, periodForDate } = require('../miniprogram/domain/plan');
+const { CONFIG, derivePeriods, allocationForMode, progressToTarget, daysUntil, periodForDate, isPlanStarted, daysFrom } = require('../miniprogram/domain/plan');
 const { createExpense, createTransfer, remainingDailyBudget, dailySeries, accountBalances, ACCT } = require('../miniprogram/domain/ledger');
 const store = require('../miniprogram/store/store');
 const { migrate, SCHEMA_VERSION } = require('../miniprogram/utils/storage');
@@ -94,4 +94,10 @@ test('自动期次和 ICS 发薪提醒可派生', () => {
   assert.equal(periodForDate('2026-10-23').index, 2);
   assert.match(exportPaydayIcs(derivePeriods()), /BEGIN:VCALENDAR/);
   assert.match(exportPaydayIcs(derivePeriods()), /20260924/);
+});
+
+test('计划从 2026-09-24 开始，之前不应记账', () => {
+  assert.equal(isPlanStarted('2026-09-12'), false);
+  assert.equal(isPlanStarted('2026-09-24'), true);
+  assert.equal(daysFrom('2026-09-24', '2026-09-27'), 3);
 });

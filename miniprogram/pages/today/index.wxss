@@ -18,3 +18,4 @@
 .keypad button { height: 88rpx; margin: 0; padding: 0; border: 1rpx solid var(--line); border-radius: 20rpx; background: var(--card); color: var(--ink); font-family: "Noto Serif SC", "Songti SC", serif; font-size: 34rpx; line-height: 88rpx; }
 .keypad-ok { margin-top: 16rpx; }
 .keypad-cancel { padding: 22rpx 0 0; color: var(--dim); text-align: center; font-size: 24rpx; }
+.prestart { padding: 48rpx 32rpx; text-align: center; }

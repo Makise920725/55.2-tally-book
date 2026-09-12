@@ -108,4 +108,17 @@ function setScenario(scenario) {
   return commit({ ...current, config: { ...current.config, dailyBudget, scenario }, periods: derivePeriods({ dailyBudget }) });
 }
 
-module.exports = { getState, subscribe, addExpense, settleDay, reopenDay, togglePaydayStep, executePayday, addSpecial, setMode, setScenario, addAdjust, reset };
+function allocateDay({ date }) {
+  const current = getState();
+  const { CONFIG, daysFrom, allocationForMode } = require('../domain/plan');
+  if (date < CONFIG.startDate) return { state: current, persisted: true, blocked: 'not_started' };
+  const dayNumber = daysFrom(CONFIG.startDate, date);
+  const amount = allocationForMode(current.config.dailyBudget, current.mode) * (current.mode === 'three-day' ? (dayNumber % 3 === 0 ? 1 : 0) : 1);
+  if (!amount) return { state: current, persisted: true, skipped: true };
+  const existing = current.ledger.transfers.some(item => item.date === date && item.kind === 'daily_alloc');
+  if (existing) return { state: current, persisted: true, alreadyAllocated: true };
+  const transfer = createTransfer({ id: `alloc_${Date.now()}`, date, from: ACCT.POOL2, to: ACCT.BANK1, amount, kind: 'daily_alloc' });
+  return { ...commit({ ...current, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }), transfer };
+}
+
+module.exports = { getState, subscribe, addExpense, settleDay, reopenDay, togglePaydayStep, executePayday, addSpecial, setMode, setScenario, allocateDay, addAdjust, reset };

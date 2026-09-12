@@ -2,6 +2,7 @@ const { yuanToFen } = require('./money');
 const { countPayableWorkdays } = require('./calendar');
 
 const CONFIG = Object.freeze({
+  startDate: '2026-09-24',
   dailyBudget: 5519,
   salaryPerDay: 15000,
   monthlyAllowance: 200000,
@@ -64,8 +65,16 @@ function periodForDate(date, periods = derivePeriods()) {
   return periods.find(item => date >= item.rangeStart && date <= item.rangeEnd) || periods[0];
 }
 
+function isPlanStarted(date, startDate = CONFIG.startDate) { return date >= startDate; }
+
+function daysFrom(start, date) {
+  const [sy, sm, sd] = start.split('-').map(Number);
+  const [dy, dm, dd] = date.split('-').map(Number);
+  return Math.floor((Date.UTC(dy, dm - 1, dd) - Date.UTC(sy, sm - 1, sd)) / 86400000);
+}
+
 function createInitialState() {
   return { version: 1, schemaVersion: 4, config: { ...CONFIG, scenario: '中' }, mode: 'daily', categories: DEFAULT_CATEGORIES, openingBalances: { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 }, daySlots: {}, paydaySteps: {}, executedPaydays: {}, ledger: { expenses: [], transfers: [], specials: [], adjusts: [] } };
 }
 
-module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, SCENARIOS, allocationForMode, progressToTarget, daysUntil, derivePeriods, periodForDate, createInitialState };
+module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, SCENARIOS, allocationForMode, progressToTarget, daysUntil, derivePeriods, periodForDate, isPlanStarted, daysFrom, createInitialState };
