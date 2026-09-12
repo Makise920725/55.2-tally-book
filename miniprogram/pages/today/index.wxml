@@ -1,0 +1,6 @@
+<view class="page">
+  <view class="eyebrow">55块2 · 今日</view>
+  <view class="title">今天还能花</view>
+  <view class="card hero"><view class="amount">¥ {{remaining}}</view><view>每日额度 ¥{{dailyBudget}}</view></view>
+  <view class="card">今日流水</view>
+</view>

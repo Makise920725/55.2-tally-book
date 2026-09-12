@@ -1,0 +1,13 @@
+{
+  "name": "tally-book",
+  "version": "0.1.0",
+  "private": true,
+  "description": "55块2：本地优先的微信小程序财务台账",
+  "scripts": {
+    "test": "node --test",
+    "verify:plan": "node test/plan.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

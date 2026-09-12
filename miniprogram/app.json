@@ -1,0 +1,28 @@
+{
+  "pages": [
+    "pages/today/index",
+    "pages/period/index",
+    "pages/pocket/index",
+    "pages/payday/index",
+    "pages/me/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "55块2",
+    "navigationBarBackgroundColor": "#F7F5EF",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#F7F5EF"
+  },
+  "tabBar": {
+    "color": "#8E8A80",
+    "selectedColor": "#2E5D50",
+    "backgroundColor": "#F7F5EF",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/today/index", "text": "今日" },
+      { "pagePath": "pages/period/index", "text": "本期" },
+      { "pagePath": "pages/pocket/index", "text": "储蓄" },
+      { "pagePath": "pages/payday/index", "text": "发薪日" },
+      { "pagePath": "pages/me/index", "text": "我的" }
+    ]
+  }
+}

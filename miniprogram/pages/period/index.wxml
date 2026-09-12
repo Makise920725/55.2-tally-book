@@ -1,0 +1,1 @@
+<view class="page"><view class="eyebrow">55块2 · 本期</view><view class="title">五期计划</view><block wx:for="{{periods}}" wx:key="index"><view class="card"><view>第 {{item.index}} 期 · {{item.payDate}}</view><view class="amount">¥ {{item.save}}</view><view>累计储蓄 ¥{{item.pocket}}</view></view></block></view>

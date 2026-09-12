@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>55块2 · 小程序原型</title>
+<style>
+:root{--bg:#0f1512;--card:#182019;--line:#26312a;--ink:#e8efe8;--dim:#8fa093;--acc:#c9a961;--ok:#6fbf8f;--warn:#c97b61}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#000;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);display:flex;justify-content:center}
+.app{width:100%;max-width:390px;min-height:100vh;background:var(--bg);padding-bottom:84px}
+header{padding:16px 18px 6px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+header .t{font-size:16px;font-weight:600;white-space:nowrap}
+header .d{font-size:10.5px;color:var(--dim);text-align:right;line-height:1.4}
+.card{background:var(--card);margin:10px 14px;padding:15px 16px;border-radius:16px;border:1px solid var(--line)}
+.big{font-size:42px;font-weight:700;letter-spacing:-1px;font-variant-numeric:tabular-nums;text-align:center;margin:4px 0 2px}
+.lbl{text-align:center;font-size:11px;color:var(--dim);letter-spacing:3px}
+.sub{text-align:center;font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;line-height:1.6}
+.ring{display:flex;justify-content:center;margin:8px 0 2px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.cat{background:#1e2820;border:1px solid var(--line);border-radius:12px;padding:9px 2px;text-align:center;font-size:11.5px;cursor:pointer;transition:.12s}
+.cat:active{transform:scale(.93);background:#2a3a2e}
+.cat i{display:block;font-size:18px;margin-bottom:2px;font-style:normal}
+.btn{display:block;width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;background:var(--acc);color:#1a1408;font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.btn.g{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:500}
+.row{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:7px 0;border-bottom:1px solid #1e2720;font-variant-numeric:tabular-nums}
+.row:last-child{border:0}
+.row>span:first-child{color:var(--dim);flex:1}
+.row b{font-weight:600;text-align:right}
+.kv{display:flex;justify-content:space-between;align-items:baseline;margin:3px 0}
+.kv .k{font-size:11.5px;color:var(--dim)}
+.kv .v{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+.bar{height:8px;background:#232e26;border-radius:5px;overflow:visible;margin:10px 0 6px;position:relative}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:5px;transition:.4s}
+.bar u{position:absolute;top:-5px;bottom:-5px;width:2px;background:var(--ok)}
+.bars{display:flex;align-items:flex-end;gap:3px;height:62px;margin:10px 0 2px}
+.bars div{flex:1;background:#2a3a2e;border-radius:2px;min-height:2px}
+.bars div.on{background:var(--acc)}
+.bars div.over{background:var(--warn)}
+.chip{display:inline-block;font-size:10px;padding:2px 7px;border-radius:20px;background:#22301f;color:var(--ok)}
+.chip.g{background:#241f14;color:var(--dim)}
+.step{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid #1e2720;cursor:pointer}
+.step:last-child{border:0}
+.step .bx{width:19px;height:19px;border:1.5px solid var(--dim);border-radius:5px;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--ok)}
+.step.done .bx{background:#22301f;border-color:var(--ok)}
+.step.done .tx{opacity:.4}
+.tx{font-size:13px;line-height:1.5}
+.tx em{display:block;font-style:normal;font-size:11px;color:var(--dim);margin-top:2px;font-variant-numeric:tabular-nums}
+.pk{padding:10px 0;border-bottom:1px solid #1e2720;display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px}
+.pk:last-child{border:0}
+.pk .n{color:var(--dim);font-size:10.5px;margin-top:2px}
+.pk .a{font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:390px;display:flex;background:#141a15;border-top:1px solid var(--line);padding:8px 0 20px;z-index:9}
+nav button{flex:1;background:none;border:0;color:var(--dim);font-size:10px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:3px}
+nav button i{font-size:17px;font-style:normal}
+nav button.on{color:var(--acc)}
+.mask{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:flex-end;justify-content:center;z-index:20}
+.mask.show{display:flex}
+.sheet{background:#182019;width:100%;max-width:390px;border-radius:20px 20px 0 0;padding:18px 16px 26px}
+.amt{font-size:34px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;margin:8px 0 14px}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.keypad button{padding:14px;background:#222d25;border:0;border-radius:10px;color:var(--ink);font-size:17px;font-family:inherit;font-variant-numeric:tabular-nums;cursor:pointer}
+.keypad button.ok{background:var(--acc);color:#1a1408;font-weight:700}
+.cc{text-align:center;font-size:12px;color:var(--dim);margin-top:12px;cursor:pointer}
+.hint{font-size:11px;color:var(--dim);line-height:1.7;margin-top:10px}
+.flag{background:#1d2a1e;border:1px solid #2c4030;border-radius:10px;padding:9px 11px;font-size:11.5px;color:#a9c9ae;line-height:1.65;margin-top:12px}
+h4{font-size:11px;color:var(--dim);letter-spacing:1.5px;margin-bottom:6px;font-weight:500}
+.log{font-size:12px;color:var(--dim);padding:5px 0;border-bottom:1px solid #1d261f;font-variant-numeric:tabular-nums}
+.log:last-child{border:0}
+.toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);background:#22301f;color:#bfe0c6;border:1px solid #2c4030;padding:11px 18px;border-radius:30px;font-size:12.5px;z-index:30;display:none;white-space:nowrap}
+</style></head>
+<body>
+<div class="app">
+<header><div class="t" id="ht">55块2</div><div class="d" id="hd"></div></header>
+<div id="v"></div>
+<nav>
+<button data-p="today" class="on"><i>&#127869;</i>今日</button>
+<button data-p="period"><i>&#128200;</i>本期</button>
+<button data-p="pocket"><i>&#128176;</i>储蓄</button>
+<button data-p="payday"><i>&#9989;</i>发薪</button>
+<button data-p="me"><i>&#9881;&#65039;</i>我的</button>
+</nav>
+</div>
+<div class="mask" id="mask"><div class="sheet">
+<div class="lbl" id="kcat">吃饭</div>
+<div class="amt">&yen; <span id="kamt">0</span></div>
+<div class="keypad">
+<button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+<button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+<button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+<button data-k=".">.</button><button data-k="0">0</button><button class="ok" data-k="ok">完成</button>
+</div>
+<div class="cc" id="kcancel">取消</div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+var RATE=55.19, TARGET=11991.74, GOAL=10000, DEADLINE='2027-02-05';
+var EV=[
+ {i:1,ad:'2026-09-24',wd:'四',nd:'09-25',why:'中秋假期首日',s:'09-24',e:'10-22',days:29,inc:5300,sal:'3,300（22天）',bill:1844.32,bm:'10月',sp:0,spn:''},
+ {i:2,ad:'2026-10-23',wd:'五',nd:'10-25',why:'25日是周日',s:'10-23',e:'11-24',days:33,inc:4550,sal:'2,550（17天）',bill:1376.61,bm:'11月',sp:0,spn:''},
+ {i:3,ad:'2026-11-25',wd:'三',nd:'11-25',why:'正常',s:'11-25',e:'12-24',days:30,inc:5450,sal:'3,450（23天）',bill:928.29,bm:'12月',sp:0,spn:''},
+ {i:4,ad:'2026-12-25',wd:'五',nd:'12-25',why:'正常',s:'12-25',e:'01-24',days:31,inc:5000,sal:'3,000（20天）',bill:836.52,bm:'1月',sp:405.88,spn:'Q4水电'},
+ {i:5,ad:'2027-01-25',wd:'一',nd:'01-25',why:'正常',s:'01-25',e:'02-05',days:12,inc:5300,sal:'3,300（22天）',bill:722.59,bm:'2月',sp:43.40,spn:'理发补差'}
+];
+var CATS=[['&#127834;','吃饭'],['&#128049;','猫'],['&#129524;','日用'],['&#127872;','零食'],['&#128736;','充电'],['&#128087;','衣物'],['&#127918;','娱乐'],['&#10133;','其他']];
+function r2(x){return Math.round(x*100)/100}
+function bud(d){return r2(RATE*d)}
+function sv(e){return r2(e.inc-e.bill-bud(e.days))}
+function money(x){return x.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function balAfter(idx){var b=0;for(var j=0;j<=idx;j++){b+=sv(EV[j]);if(EV[j].sp)b-=EV[j].sp}return r2(b)}
+function totalLogged(){var t=0;Object.keys(S.logs).forEach(function(k){S.logs[k].forEach(function(l){t+=l.a})});return r2(t)}
+function poolLeft(e){return r2(Math.max(0,bud(e.days)-totalLogged()))}
+var S=JSON.parse(localStorage.getItem('p5519b')||'{}');
+S.cur=S.cur||1;S.logs=S.logs||{};S.steps=S.steps||{};S.closed=S.closed||{};
+function save(){localStorage.setItem('p5519b',JSON.stringify(S))}
+function today(){var d=new Date();return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)}
+function spent(k){var a=S.logs[k]||[],t=0;for(var i=0;i<a.length;i++)t+=a[i].a;return r2(t)}
+function curEv(){for(var i=0;i<EV.length;i++)if(EV[i].i===S.cur)return EV[i];return EV[0]}
+function curIdx(){var id=0;for(var i=0;i<EV.length;i++)if(EV[i].i===curEv().i)id=i;return id}
+function toast(t){var el=document.getElementById('toast');el.textContent=t;el.style.display='block';clearTimeout(el._x);el._x=setTimeout(function(){el.style.display='none'},2800)}
+var P='today',buf='';
+
+function row(a,b){return '<div class="row"><span>'+a+'</span><b>'+b+'</b></div>'}
+function ring(pct,over){var c=over?'var(--warn)':'var(--acc)',r=34,w=7,d=2*Math.PI*r,o=Math.max(0,100-pct)/100*d;
+ return '<svg width="112" height="112" viewBox="0 0 90 90"><circle cx="45" cy="45" r="'+r+'" fill="none" stroke="#232e26" stroke-width="'+w+'"/><circle cx="45" cy="45" r="'+r+'" fill="none" stroke="'+c+'" stroke-width="'+w+'" stroke-linecap="round" stroke-dasharray="'+d+'" stroke-dashoffset="'+o+'" transform="rotate(-90 45 45)"/><text x="45" y="50" text-anchor="middle" font-size="12" fill="'+c+'">'+(over?'已超支':'剩 '+Math.round(100-pct)+'%')+'</text></svg>'}
+function bars(e){var o='',base=70;for(var i=0;i<e.days;i++){var v=i===e.days-1?spent(today()):0;
+ o+='<div class="'+(v>55.19?'over':v>0?'on':'')+'" style="height:'+Math.max(3,Math.min(100,v/base*100))+'%"></div>'}return o}
+
+function render(){
+ var e=curEv(), i=curIdx(), h='';
+ document.getElementById('ht').textContent={today:'今日额度',period:'本期',pocket:'储蓄',payday:'发薪日 SOP',me:'我的'}[P];
+ document.getElementById('hd').innerHTML=e.s+' → '+e.e+'<br>'+e.ad+' 到账 · 第 '+e.i+'/5 期';
+
+ if(P==='today'){
+  var k=today(), sp=spent(k), left=r2(RATE-sp), pct=sp/RATE*100, shut=!!S.closed[k];
+  h+='<div class="card"><div class="lbl">今天还能花</div><div class="big" style="color:'+(left<0?'var(--warn)':'var(--ink)')+'">&yen; '+money(Math.max(0,left))+'</div>'+
+     '<div class="ring">'+ring(pct,left<0)+'</div><div class="sub">额度 '+money(RATE)+'　已花 '+money(sp)+'</div>';
+  if(!shut){h+='<div class="grid">'+CATS.map(function(c){return '<div class="cat" data-c="'+c[1]+'"><i>'+c[0]+'</i>'+c[1]+'</div>'}).join('')+'</div>'+
+     '<button class="btn" data-a="close">晚间结算：退回余额宝 &yen;'+money(Math.max(0,left))+'</button>';}
+  else{h+='<div class="flag" style="margin-top:14px">今日已封账，结余 '+money(Math.max(0,left))+' 已退回②。明天 08:00 再划 55.19。<br><span style="cursor:pointer;text-decoration:underline" data-a="reopen">撤销封账</span></div>';}
+  h+='<div class="flag"><b>锁死这套流程的前提：</b>支付宝扣款顺序设为「仅银行卡①」，余额宝与小荷包<b>不参与递补</b>。否则每天划 55.19 是白做的。</div></div>';
+  var lg=S.logs[k]||[];
+  if(lg.length)h+='<div class="card"><h4>今日流水</h4>'+lg.slice().reverse().map(function(l){return '<div class="log">'+l.t+'　'+l.c+'<b style="float:right;color:var(--ink)">&minus;'+money(l.a)+'</b></div>'}).join('')+'</div>';
+  h+='<div class="card"><h4>三个账户</h4>'+row('① 工资卡（今天可花）',money(Math.max(0,left)))+row('② 余额宝 · 本期余粮',money(poolLeft(e)))+row('③ 小荷包 · 储蓄',money(balAfter(i)))+'</div>';
+ }
+
+ if(P==='period'){
+  h+='<div class="card"><div class="kv"><span class="k">本期区间</span><span class="chip">'+e.s+' → '+e.e+'</span></div>'+
+     '<div class="kv"><span class="k">② 本期预算（'+e.days+' 天 × 55.19）</span><span class="v">&yen; '+money(bud(e.days))+'</span></div>'+
+     '<div class="bar"><i style="width:'+(Math.min(100,(e.days-1)/e.days*100))+'%"></i></div>'+
+     '<div class="sub">原型以「今天」演示，正式版按真实日历推进</div></div>';
+  h+='<div class="card"><h4>每日支出（最右为今天）</h4><div class="bars">'+bars(e)+'</div><div class="sub">柱高上限 70 元，超 55.19 变橙色</div></div>';
+  var avg=spent(today())>0?spent(today()):RATE, willLeft=r2(bud(e.days)-avg*e.days);
+  h+='<div class="card"><h4>期末预测</h4>'+row('本期预算',money(bud(e.days)))+row('本期已花（原型只含今天）',money(totalLogged()))+
+     row('今日结余（可退回②）','<b style="color:var(--ok)">&yen; '+money(Math.max(0,r2(RATE-spent(today()))))+'</b>')+
+     '<div class="hint">若每天都按今天这么花（'+money(avg)+'），'+e.days+' 天后余额宝预计剩 <b style="color:var(--ok)">'+money(Math.max(0,willLeft))+'</b>；下一个发薪日（'+EV[Math.min(EV.length-1,i+1)].ad+'）这笔结余一并转入小荷包。</div>'+
+     '<div class="hint" style="color:#8a7a55">反向参考：若每天刚好花满 55.19，期末结余为 0，储蓄仍按台账计划达成 11,991.74。</div></div>';
+ }
+
+ if(P==='pocket'){
+  var b=balAfter(i);
+  h+='<div class="card"><div class="lbl">③ 小荷包</div><div class="big">&yen; '+money(b)+'</div>'+
+     '<div class="bar" style="height:10px"><i style="width:'+(b/TARGET*100).toFixed(1)+'%"></i><u style="left:'+(GOAL/TARGET*100).toFixed(1)+'%"></u></div>'+
+     '<div class="sub">距 1 万还差 <b style="color:'+(b>=GOAL?'var(--ok)':'var(--ink)')+'">'+money(Math.max(0,GOAL-b))+'</b>　终点 '+money(TARGET)+'</div></div>';
+  h+='<div class="card"><h4>五期计划</h4>'+EV.map(function(x,j){
+     var done=x.i<S.cur, isCur=x.i===S.cur;
+     return '<div class="pk"><div style="flex:1"><div>'+(done?'<span style="color:var(--ok)">✓ </span>':'')+x.ad+'（周'+x.wd+'）'+(isCur?' <span class="chip">本期</span>':'')+'</div>'+
+       '<div class="n">转 '+money(sv(x))+(x.sp?' · 扣'+x.spn+' '+money(x.sp):'')+'</div></div><div class="a">'+money(balAfter(j))+'</div></div>'}).join('')+
+     '<div class="flag"><b>12/25 之后只有 8,120.01</b>，要到 1/25 才一次跨过 1 万 —— 这是计划内的正常节奏，不是你失败了。</div></div>';
+  h+='<div class="card"><h4>专项支出（从③划出，不占日额度）</h4>'+row('12月 Q4水电季缴（中值）','&minus;'+money(405.88))+row('1月 理发补差（烫头推年后＝免）','&minus;'+money(43.40))+row('1—2月水电（3月底缴 · 代管）','&minus;'+money(231.06))+'</div>';
+ }
+
+ if(P==='payday'){
+  var st=[[1,'工资 + 生活费到账',e.sal+' + 2,000.00 = '+money(e.inc)],
+          [2,'还 '+e.bm+' 账单　<span style="font-size:10px;color:var(--dim)">划转，不是支出</span>',money(e.bill)+'　花呗 / 月付 / 放心借 / 白条'],
+          [3,'余额宝② 放本期预算','55.19 × '+e.days+' 天 = '+money(bud(e.days))],
+          [4,'小荷包③ 存储蓄　★ 最重要',money(sv(e))],
+          [5,'清 ② 上期结余 → 也进小荷包','省多少转多少']];
+  h+='<div class="card"><div class="kv"><span class="k">到账日 '+e.ad+'（周'+e.wd+'）</span><span class="chip'+(e.why==='正常'?' g':'')+'">'+(e.why==='正常'?'正常发放':'提前 · '+e.why)+'</span></div>'+
+     '<h4 style="margin-top:12px">五步清单（点一下打勾）</h4>'+
+     st.map(function(s){var d=S.steps[e.i+'-'+s[0]];
+       return '<div class="step'+(d?' done':'')+'" data-s="'+s[0]+'"><div class="bx">'+(d?'✓':'')+'</div><div class="tx">'+s[1]+'<em>'+s[2]+'</em></div></div>'}).join('')+
+     '<button class="btn" data-a="fin">五步完成，本期已存 &yen;'+money(sv(e))+'</button>'+
+     '<button class="btn g" data-a="next">切到下一期看看</button></div>';
+  h+='<div class="card"><h4>五期总览</h4>'+EV.map(function(x){return row(x.ad+'（周'+x.wd+'）',money(x.inc)+' → 存 '+money(sv(x)))}).join('')+
+     '<div class="hint">合计：到账 25,600.00 − 还债 5,708.33 − 日常预算 7,450.65 − 专项 449.28 = 小荷包 <b>11,991.74</b></div></div>';
+ }
+
+ if(P==='me'){
+  h+='<div class="card"><h4>参数（全部来自台账）</h4>'+row('日额度','55.19 = 吃饭30 + 猫8.21 + 其他16.98')+row('日薪 / 休息','150 元 · 双休')+row('计薪周期','上月21日 — 本月20日')+row('发薪日','25日（逢休息/假日提前）')+row('截止日',DEADLINE+' 出发回家')+row('目标 / 精算终点','10,000 ／ 11,760.68（净）')+'</div>';
+  h+='<div class="card"><h4>情景切换（正式版会重算全表）</h4><div class="grid" style="grid-template-columns:repeat(3,1fr)">'+
+     '<div class="cat" data-sc="省"><i>&#128183;</i>省 48.29</div><div class="cat" data-sc="中"><i>&#128181;</i>中 55.19</div><div class="cat" data-sc="松"><i>&#128184;</i>松 63.73</div></div>'+
+     '<div class="hint">省＝其他307/月＋居民电价0.5283；松＝其他777/月＋转供电价约1元/度。<br>对应 2/5 净存款：省 12,875.42 ｜ 中 <b>11,760.68</b> ｜ 松 10,421.84。三档均达成 10,000 目标。</div></div>';
+  h+='<div class="card"><h4>正式版还需实现</h4>'+row('订阅消息','08:00 划额 / 22:00 结算 / 发薪日 SOP')+row('金额校准','手填真实余额，差额进 adjust 表')+row('CSV 导出','含支出 / 划转 / 专项三类')+row('云开发同步','换手机不丢数据')+'<button class="btn g" data-a="reset">重置演示数据</button></div>';
+ }
+ document.getElementById('v').innerHTML=h; bind();
+}
+
+function bind(){
+ document.querySelectorAll('.cat[data-c]').forEach(function(el){el.onclick=function(){
+  buf='';document.getElementById('kcat').textContent=el.dataset.c;document.getElementById('kamt').textContent='0';
+  document.getElementById('mask').classList.add('show');
+  document.querySelectorAll('[data-k]').forEach(function(b2){b2.onclick=function(){var kk=b2.dataset.k;
+   if(kk==='ok'){var v=parseFloat(buf);if(!(v>0)){document.getElementById('mask').classList.remove('show');return}
+    var d=today();(S.logs[d]=S.logs[d]||[]).push({c:el.dataset.c,a:r2(v),t:new Date().toTimeString().slice(0,5)});save();
+    document.getElementById('mask').classList.remove('show');render();
+    var lf=r2(RATE-spent(d));toast(lf>=0?('已记 '+money(v)+'，今天还能花 '+money(lf)):('今日超额 '+money(-lf)+'，从②余粮支出'));return}
+   if(kk==='.'){if(buf.indexOf('.')<0)buf=(buf===''?'0.':buf+'.')}else{if(buf==='0')buf=kk;else if(buf.length<7)buf+=kk}
+   document.getElementById('kamt').textContent=buf===''?'0':buf}});
+ }});
+ document.getElementById('kcancel').onclick=function(){document.getElementById('mask').classList.remove('show')};
+ document.querySelectorAll('.step').forEach(function(el){el.onclick=function(){var e=curEv(),kk=e.i+'-'+el.dataset.s;S.steps[kk]=!S.steps[kk];save();render()}});
+ document.querySelectorAll('[data-a]').forEach(function(el){el.onclick=function(){var a=el.dataset.a,k=today();
+  if(a==='close'){var lf=r2(Math.max(0,RATE-spent(k)));S.closed[k]=1;save();render();toast('今日结余 '+money(lf)+' 已退回余额宝 · 已封账')}
+  if(a==='reopen'){delete S.closed[k];save();render()}
+  if(a==='next'){if(S.cur<EV.length)S.cur++;save();toast('已切到第 '+S.cur+' 期')}
+  if(a==='fin'){var e=curEv();save();toast('本期储蓄 '+money(sv(e))+' 已锁定进小荷包')}
+  if(a==='reset'){localStorage.removeItem('p5519b');location.reload()}
+ }});
+ document.querySelectorAll('[data-sc]').forEach(function(el){el.onclick=function(){toast('原型演示：正式版将按「'+el.dataset.sc+'」档重算 5 期')}});
+}
+document.querySelectorAll('nav button').forEach(function(b){b.onclick=function(){
+ document.querySelectorAll('nav button').forEach(function(x){x.classList.remove('on')});b.classList.add('on');P=b.dataset.p;render()}});
+render();
+</script>
+</body></html>

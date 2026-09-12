@@ -1,0 +1,1 @@
+<view class="page"><view class="eyebrow">55块2 · 我的</view><view class="title">参数</view><view wx:if="{{config}}" class="card"><view>每日额度：¥{{config.dailyBudget}}</view><view>日薪：¥{{config.salaryPerDay / 100}}</view><view>截止日：{{config.deadline}}</view><view>最低目标：¥{{config.goalMinimum}}</view><view>精算终点：¥{{config.targetSavings}}</view></view></view>

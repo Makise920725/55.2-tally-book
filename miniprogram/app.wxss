@@ -1,0 +1,11 @@
+page {
+  background: #f7f5ef;
+  color: #2b302d;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.page { padding: 32rpx; }
+.eyebrow { color: #77766f; font-size: 24rpx; }
+.title { margin: 12rpx 0 32rpx; font-size: 48rpx; font-weight: 600; }
+.card { margin-bottom: 24rpx; padding: 28rpx; border-radius: 20rpx; background: #fffdf8; }
+.amount { color: #2e5d50; font-size: 64rpx; font-weight: 700; }

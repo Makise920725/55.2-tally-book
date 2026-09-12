@@ -1,0 +1,1 @@
+<view class="page"><view class="eyebrow">55块2 · 发薪日 SOP</view><view class="title">五步清单</view><view wx:if="{{period}}" class="card"><view>1. 工资与生活费到账 ¥{{period.total}}</view><view>2. 还账单 ¥{{period.bill}}</view><view>3. 余额宝预算 ¥{{period.budget}}</view><view>4. 小荷包储蓄 ¥{{period.save}}</view><view>5. 清理上期结余</view></view></view>

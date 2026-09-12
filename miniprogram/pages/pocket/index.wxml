@@ -1,0 +1,1 @@
+<view class="page"><view class="eyebrow">55块2 · 储蓄</view><view class="title">小荷包</view><view class="card"><view class="amount">¥ {{current}}</view><view>心理目标 ¥{{goal}}</view><view>精算终点 ¥{{target}}</view></view></view>
