@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { yuanToFen, formatFen } = require('../miniprogram/domain/money');
 const { countPayableWorkdays } = require('../miniprogram/domain/calendar');
 const { CONFIG, derivePeriods, allocationForMode, progressToTarget, daysUntil } = require('../miniprogram/domain/plan');
-const { createExpense, remainingDailyBudget } = require('../miniprogram/domain/ledger');
+const { createExpense, remainingDailyBudget, dailySeries } = require('../miniprogram/domain/ledger');
 const { migrate, SCHEMA_VERSION } = require('../miniprogram/utils/storage');
 const { exportLedgerCsv } = require('../miniprogram/utils/csv');
 
@@ -54,4 +54,12 @@ test('三天一结的单次额度按三日计算', () => {
 test('储蓄进度和截止日倒计时计算稳定', () => {
   assert.equal(progressToTarget(500000, 1000000), 50);
   assert.equal(daysUntil('2026-09-13', new Date('2026-09-12T12:00:00')), 1);
+});
+
+test('本期每日柱状数据按日期生成', () => {
+  const expenses = [createExpense({ id: 'a', date: '2026-09-24', category: 'meal', amount: 6000 })];
+  const series = dailySeries(expenses, '2026-09-24', 2);
+  assert.deepEqual(series.map(item => item.date), ['2026-09-24', '2026-09-25']);
+  assert.equal(series[0].over, true);
+  assert.equal(series[1].used, false);
 });

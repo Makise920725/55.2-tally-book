@@ -14,6 +14,17 @@ function accountBalances(transfers, expenses, opening = {}) {
 function dailySpent(expenses, date) { return sum(expenses, item => item.date === date); }
 function remainingDailyBudget(expenses, date, dailyBudget) { return dailyBudget - dailySpent(expenses, date); }
 
+function dailySeries(expenses, start, days, limit = 7000) {
+  const [year, month, day] = start.split('-').map(Number);
+  const cursor = new Date(Date.UTC(year, month - 1, day));
+  return Array.from({ length: days }, (_, index) => {
+    const date = cursor.toISOString().slice(0, 10);
+    const spent = dailySpent(expenses, date);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    return { date, label: date.slice(5).replace('-', '/'), spent, height: Math.max(3, Math.min(100, (spent / limit) * 100)), used: spent > 0, over: spent > 5519 };
+  });
+}
+
 function createExpense({ id, date, category, amount, note = '' }) {
   if (!id || !date || !category || !Number.isInteger(amount) || amount <= 0) {
     throw new TypeError('expense requires id, date, category and positive integer amount');
@@ -28,4 +39,4 @@ function createTransfer({ id, date, from, to, amount, kind }) {
   return { id, date, from, to, amount, kind, createdAt: new Date().toISOString() };
 }
 
-module.exports = { ACCT, sum, accountBalances, dailySpent, remainingDailyBudget, createExpense, createTransfer };
+module.exports = { ACCT, sum, accountBalances, dailySpent, remainingDailyBudget, dailySeries, createExpense, createTransfer };
