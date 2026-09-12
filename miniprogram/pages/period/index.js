@@ -1,4 +1,4 @@
-const { derivePeriods } = require('../../domain/plan');
+const { derivePeriods, periodForDate } = require('../../domain/plan');
 const { formatFen } = require('../../domain/money');
 const { sum, dailySeries } = require('../../domain/ledger');
 const store = require('../../store/store');
@@ -10,7 +10,9 @@ Page({
   refresh() {
     const state = store.getState();
     const periods = state.periods.map(item => ({ ...item, save: formatFen(item.saveToPocket), pocket: formatFen(item.pocketAfter), budget: formatFen(item.budgetToPool), bill: formatFen(item.billTotal) }));
-    const current = state.periods[0];
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const current = periodForDate(todayKey, state.periods);
     const spent = sum(state.ledger.expenses, item => item.date >= current.rangeStart && item.date <= current.rangeEnd);
     const mode = state.mode || 'daily';
     const allocation = mode === 'three-day' ? state.config.dailyBudget * 3 : state.config.dailyBudget;

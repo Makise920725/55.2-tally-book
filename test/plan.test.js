@@ -145,3 +145,8 @@ test('三天一结前两天不退款，第三天按批次退款', () => {
   const result = store.settleDay({ date: '2026-09-26', dailyBudget: 5519 });
   assert.equal(result.transfer.amount, 11557);
 });
+
+test('当前日期可自动定位到对应期次', () => {
+  assert.equal(periodForDate('2026-11-26', derivePeriods()).index, 3);
+  assert.equal(periodForDate('2026-09-12', derivePeriods()).index, 1);
+});

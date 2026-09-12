@@ -1,10 +1,18 @@
-const { derivePeriods } = require('../../domain/plan');
+const { derivePeriods, periodForDate } = require('../../domain/plan');
 const { formatFen } = require('../../domain/money');
 const store = require('../../store/store');
 
 Page({
   data: { period: null, steps: [], periodIndex: 1, periodOptions: ['第 1 期', '第 2 期', '第 3 期', '第 4 期', '第 5 期'] },
-  onLoad() { this.unsubscribe = store.subscribe(() => this.refresh()); this.refresh(); },
+  onLoad() {
+    const state = store.getState();
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    this.setData({ periodIndex: (periodForDate(todayKey, state.periods || derivePeriods()).index || 1) }, () => {
+      this.unsubscribe = store.subscribe(() => this.refresh());
+      this.refresh();
+    });
+  },
   onUnload() { if (this.unsubscribe) this.unsubscribe(); },
   refresh() {
     const state = store.getState();
