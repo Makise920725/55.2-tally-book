@@ -8,14 +8,14 @@
   ],
   "window": {
     "navigationBarTitleText": "55块2",
-    "navigationBarBackgroundColor": "#F7F5EF",
+    "navigationBarBackgroundColor": "#F7F7F5",
     "navigationBarTextStyle": "black",
-    "backgroundColor": "#F7F5EF"
+    "backgroundColor": "#F7F7F5"
   },
   "tabBar": {
     "color": "#8E8A80",
-    "selectedColor": "#2E5D50",
-    "backgroundColor": "#F7F5EF",
+    "selectedColor": "#171717",
+    "backgroundColor": "#F7F7F5",
     "borderStyle": "white",
     "list": [
       { "pagePath": "pages/today/index", "text": "今日" },

@@ -12,10 +12,10 @@ const CONFIG = Object.freeze({
 
 const BILL_TOTALS = Object.freeze([184432, 137661, 92829, 83652, 72259]);
 const DEFAULT_CATEGORIES = Object.freeze([
-  { id: 'meal', name: '吃饭', icon: '🍚' }, { id: 'cat', name: '猫', icon: '🐱' },
-  { id: 'daily', name: '日用', icon: '🧴' }, { id: 'snack', name: '零食', icon: '🍿' },
-  { id: 'charge', name: '充电', icon: '🛴' }, { id: 'cloth', name: '衣物', icon: '👕' },
-  { id: 'fun', name: '娱乐', icon: '🎮' }, { id: 'other', name: '其他', icon: '➕' }
+  { id: 'meal', name: '吃饭', mark: '食' }, { id: 'cat', name: '猫', mark: '猫' },
+  { id: 'daily', name: '日用', mark: '用' }, { id: 'snack', name: '零食', mark: '零' },
+  { id: 'charge', name: '充电', mark: '电' }, { id: 'cloth', name: '衣物', mark: '衣' },
+  { id: 'fun', name: '娱乐', mark: '娱' }, { id: 'other', name: '其他', mark: '杂' }
 ]);
 
 const PERIOD_INPUTS = Object.freeze([

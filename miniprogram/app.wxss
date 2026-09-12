@@ -1,11 +1,30 @@
 page {
-  background: #f7f5ef;
-  color: #2b302d;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --bg: #f7f7f5;
+  --card: #ffffff;
+  --paper: #f1f1ee;
+  --line: #e8e8e5;
+  --rule: #d5d5d0;
+  --ink: #171717;
+  --ink-2: #3b3b38;
+  --dim: #74746f;
+  --faint: #a9a9a3;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
-
-.page { padding: 32rpx; }
-.eyebrow { color: #77766f; font-size: 24rpx; }
-.title { margin: 12rpx 0 32rpx; font-size: 48rpx; font-weight: 600; }
-.card { margin-bottom: 24rpx; padding: 28rpx; border-radius: 20rpx; background: #fffdf8; }
-.amount { color: #2e5d50; font-size: 64rpx; font-weight: 700; }
+.page { min-height: 100vh; padding: 28rpx 32rpx 56rpx; }
+.eyebrow { color: var(--dim); font-size: 22rpx; letter-spacing: 2rpx; }
+.title { margin: 12rpx 0 34rpx; font-family: "Noto Serif SC", "Songti SC", serif; font-size: 52rpx; font-weight: 500; letter-spacing: -1rpx; }
+.card { margin-bottom: 24rpx; padding: 32rpx; border: 1rpx solid var(--line); border-radius: 28rpx; background: var(--card); }
+.amount { color: var(--ink); font-family: "Noto Serif SC", "Songti SC", serif; font-size: 68rpx; font-weight: 500; letter-spacing: -2rpx; font-variant-numeric: tabular-nums; }
+.muted, .caption { color: var(--dim); font-size: 23rpx; line-height: 1.7; }
+.section-title { margin-bottom: 24rpx; font-size: 28rpx; font-weight: 600; letter-spacing: .5rpx; }
+.button { display: block; width: 100%; padding: 24rpx; border: 0; border-radius: 24rpx; background: var(--ink); color: #fff; font-size: 27rpx; font-weight: 600; }
+.button.secondary { border: 1rpx solid var(--line); background: var(--paper); color: var(--ink-2); }
+.progress { height: 8rpx; margin: 22rpx 0 14rpx; overflow: visible; border-radius: 999rpx; background: var(--rule); }
+.progress-fill { height: 100%; border-radius: 999rpx; background: var(--ink); }
+.list-row { display: flex; align-items: center; justify-content: space-between; padding: 22rpx 0; border-bottom: 1rpx solid var(--line); font-size: 25rpx; }
+.list-row:last-child { border-bottom: 0; }
+.list-row .secondary-text { color: var(--dim); font-size: 22rpx; }
+.list-row .value { font-family: "Noto Serif SC", "Songti SC", serif; font-variant-numeric: tabular-nums; }
