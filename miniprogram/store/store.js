@@ -17,18 +17,29 @@ function commit(next) {
 }
 
 function addExpense({ date, category, amountYuan, note = '' }) {
-  const expense = createExpense({ id: `expense_${Date.now()}`, date, category, amount: yuanToFen(amountYuan), note });
   const current = getState();
+  if (current.daySlots && current.daySlots[date] && current.daySlots[date].closed) {
+    return { state: current, persisted: true, blocked: 'closed' };
+  }
+  const expense = createExpense({ id: `expense_${Date.now()}`, date, category, amount: yuanToFen(amountYuan), note });
   return commit({ ...current, ledger: { ...current.ledger, expenses: [...current.ledger.expenses, expense] } });
 }
 
 function settleDay({ date, dailyBudget }) {
   const current = getState();
+  if (current.daySlots && current.daySlots[date] && current.daySlots[date].closed) return { state: current, persisted: true, transfer: null, alreadyClosed: true };
   const amount = Math.max(0, remainingDailyBudget(current.ledger.expenses, date, dailyBudget));
   if (!amount) return { state: current, persisted: true, transfer: null };
   const transfer = createTransfer({ id: `refund_${Date.now()}`, date, from: ACCT.BANK1, to: ACCT.POOL2, amount, kind: 'daily_refund' });
   const daySlots = { ...current.daySlots, [date]: { closed: true, refunded: amount } };
   return { ...commit({ ...current, daySlots, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }), transfer };
+}
+
+function reopenDay(date) {
+  const current = getState();
+  if (!current.daySlots || !current.daySlots[date] || !current.daySlots[date].closed) return { state: current, persisted: true };
+  const daySlots = { ...current.daySlots, [date]: { ...current.daySlots[date], closed: false, reopened: true } };
+  return commit({ ...current, daySlots });
 }
 
 function reset() { state = storage.seed(); storage.persist(state); notify(); return state; }
@@ -40,4 +51,4 @@ function togglePaydayStep(periodIndex, step) {
   return commit({ ...current, paydaySteps });
 }
 
-module.exports = { getState, subscribe, addExpense, settleDay, togglePaydayStep, reset };
+module.exports = { getState, subscribe, addExpense, settleDay, reopenDay, togglePaydayStep, reset };

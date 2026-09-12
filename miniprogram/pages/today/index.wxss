@@ -8,3 +8,13 @@
 .settle { margin-bottom: 24rpx; }
 .entry { display: flex; justify-content: space-between; padding: 20rpx 0; border-bottom: 1rpx solid var(--line); font-size: 25rpx; }
 .entry:last-child { border-bottom: 0; }
+.amount-preview { display: block; font-family: "Noto Serif SC", "Songti SC", serif; font-size: 42rpx; }
+.amount-hint { display: block; margin-top: 6rpx; color: var(--dim); font-size: 22rpx; }
+.keypad-mask { position: fixed; z-index: 20; inset: 0; display: flex; align-items: flex-end; background: rgba(23, 23, 23, .28); }
+.keypad-sheet { width: 100%; padding: 28rpx 32rpx 42rpx; border-radius: 28rpx 28rpx 0 0; background: var(--bg); }
+.keypad-label { color: var(--dim); text-align: center; font-size: 22rpx; letter-spacing: 2rpx; }
+.keypad-value { margin: 12rpx 0 24rpx; text-align: center; font-family: "Noto Serif SC", "Songti SC", serif; font-size: 52rpx; }
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14rpx; }
+.keypad button { height: 88rpx; margin: 0; padding: 0; border: 1rpx solid var(--line); border-radius: 20rpx; background: var(--card); color: var(--ink); font-family: "Noto Serif SC", "Songti SC", serif; font-size: 34rpx; line-height: 88rpx; }
+.keypad-ok { margin-top: 16rpx; }
+.keypad-cancel { padding: 22rpx 0 0; color: var(--dim); text-align: center; font-size: 24rpx; }
