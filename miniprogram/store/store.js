@@ -38,8 +38,25 @@ function settleDay({ date, dailyBudget }) {
   const current = getState();
   if (current.daySlots && current.daySlots[date] && current.daySlots[date].closed) return { state: current, persisted: true, transfer: null, alreadyClosed: true };
   const slot = current.daySlots[date] || {};
-  const allocated = Number.isInteger(slot.allocated) ? slot.allocated : dailyBudget;
-  const spent = current.ledger.expenses.filter(item => item.date === date).reduce((total, item) => total + item.amount, 0);
+  let allocationDate = date;
+  let expenseStart = date;
+  let expenseEnd = date;
+  let allocated = Number.isInteger(slot.allocated) ? slot.allocated : dailyBudget;
+  if (current.mode === 'three-day') {
+    const { CONFIG, daysFrom } = require('../domain/plan');
+    const dayNumber = daysFrom(CONFIG.startDate, date);
+    const groupStart = Math.floor(dayNumber / 3) * 3;
+    const start = new Date(`${CONFIG.startDate}T00:00:00Z`);
+    start.setUTCDate(start.getUTCDate() + groupStart);
+    const end = new Date(start.getTime()); end.setUTCDate(end.getUTCDate() + 2);
+    allocationDate = start.toISOString().slice(0, 10);
+    expenseStart = allocationDate;
+    expenseEnd = end.toISOString().slice(0, 10);
+    if (date < expenseEnd) return { state: current, persisted: true, batchPending: true, allocationDate, settlementDate: expenseEnd };
+    const allocationTransfer = current.ledger.transfers.find(item => item.date === allocationDate && item.kind === 'daily_alloc');
+    allocated = allocationTransfer ? allocationTransfer.amount : dailyBudget * 3;
+  }
+  const spent = current.ledger.expenses.filter(item => item.date >= expenseStart && item.date <= expenseEnd).reduce((total, item) => total + item.amount, 0);
   const amount = Math.max(0, allocated - spent);
   if (!amount) {
     const daySlots = { ...current.daySlots, [date]: { ...slot, allocated, closed: true, refunded: 0 } };

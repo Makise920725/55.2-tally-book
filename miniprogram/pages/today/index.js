@@ -55,7 +55,7 @@ Page({
   settleDay() {
     if (!this.data.started) { wx.showToast({ title: `计划将于 ${CONFIG.startDate} 开始`, icon: 'none' }); return; }
     const result = store.settleDay({ date: dateKey(), dailyBudget: CONFIG.dailyBudget });
-    wx.showToast({ title: result.alreadyClosed ? '今天已经封账' : (result.transfer ? `已退回 ¥${formatFen(result.transfer.amount)}` : '今天没有可退余额'), icon: 'none' });
+    wx.showToast({ title: result.batchPending ? `三天一结，请在 ${result.settlementDate} 结算` : (result.alreadyClosed ? '今天已经封账' : (result.transfer ? `已退回 ¥${formatFen(result.transfer.amount)}` : '今天没有可退余额')), icon: 'none' });
   },
   allocateDay() {
     if (!this.data.started) { wx.showToast({ title: `计划将于 ${CONFIG.startDate} 开始`, icon: 'none' }); return; }

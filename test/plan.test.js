@@ -133,3 +133,15 @@ test('当天花 30 元会把 25.19 元退回预算池', () => {
   assert.equal(result.transfer.amount, 2519);
   assert.equal(result.state.daySlots['2026-09-24'].refunded, 2519);
 });
+
+test('三天一结前两天不退款，第三天按批次退款', () => {
+  global.wx = { getStorageSync: () => null, setStorageSync: () => {}, removeStorageSync: () => {} };
+  store.reset();
+  store.setMode('three-day');
+  store.allocateDay({ date: '2026-09-24' });
+  store.addExpense({ date: '2026-09-24', category: 'meal', amountYuan: 30 });
+  store.addExpense({ date: '2026-09-25', category: 'meal', amountYuan: 20 });
+  assert.equal(store.settleDay({ date: '2026-09-25', dailyBudget: 5519 }).batchPending, true);
+  const result = store.settleDay({ date: '2026-09-26', dailyBudget: 5519 });
+  assert.equal(result.transfer.amount, 11557);
+});
