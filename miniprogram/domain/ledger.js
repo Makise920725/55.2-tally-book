@@ -4,10 +4,11 @@ function sum(items, predicate = () => true) {
   return items.filter(predicate).reduce((total, item) => total + item.amount, 0);
 }
 
-function accountBalances(transfers, expenses, opening = {}) {
+function accountBalances(transfers, expenses, opening = {}, specials = []) {
   const balances = { [ACCT.BANK1]: opening[ACCT.BANK1] || 0, [ACCT.POOL2]: opening[ACCT.POOL2] || 0, [ACCT.POCKET3]: opening[ACCT.POCKET3] || 0, [ACCT.BILL]: opening[ACCT.BILL] || 0, [ACCT.OUT]: opening[ACCT.OUT] || 0 };
   transfers.forEach(({ from, to, amount }) => { balances[from] -= amount; balances[to] += amount; });
   expenses.forEach(({ account = ACCT.BANK1, amount }) => { balances[account] -= amount; balances[ACCT.OUT] += amount; });
+  specials.forEach(({ from = ACCT.POCKET3, amount }) => { balances[from] -= amount; balances[ACCT.OUT] += amount; });
   return balances;
 }
 
@@ -39,4 +40,9 @@ function createTransfer({ id, date, from, to, amount, kind }) {
   return { id, date, from, to, amount, kind, createdAt: new Date().toISOString() };
 }
 
-module.exports = { ACCT, sum, accountBalances, dailySpent, remainingDailyBudget, dailySeries, createExpense, createTransfer };
+function createSpecial({ id, date, reason, amount, note = '' }) {
+  if (!id || !date || !reason || !Number.isInteger(amount) || amount <= 0) throw new TypeError('special requires id, date, reason and positive integer amount');
+  return { id, date, reason, amount, note, from: ACCT.POCKET3, to: ACCT.OUT, createdAt: new Date().toISOString() };
+}
+
+module.exports = { ACCT, sum, accountBalances, dailySpent, remainingDailyBudget, dailySeries, createExpense, createTransfer, createSpecial };

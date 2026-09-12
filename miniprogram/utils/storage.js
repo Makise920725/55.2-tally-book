@@ -10,9 +10,11 @@ function migrate(state) {
   next.ledger.expenses = next.ledger.expenses || [];
   next.ledger.transfers = next.ledger.transfers || [];
   next.ledger.adjusts = next.ledger.adjusts || [];
+  next.ledger.specials = next.ledger.specials || [];
   next.categories = next.categories || require('../domain/plan').DEFAULT_CATEGORIES;
   next.daySlots = next.daySlots || {};
   next.paydaySteps = next.paydaySteps || {};
+  next.executedPaydays = next.executedPaydays || {};
   next.mode = next.mode || 'daily';
   next.openingBalances = next.openingBalances || { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 };
   next.schemaVersion = SCHEMA_VERSION;

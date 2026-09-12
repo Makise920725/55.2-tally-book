@@ -1,3 +1,6 @@
 .card view { padding: 16rpx 0; }
 .reset-button { margin-top: 16rpx; background: transparent; color: var(--dim); border: 1rpx solid var(--line); }
 .adjust-input { margin: 16rpx 0; padding: 22rpx; border: 1rpx solid var(--line); border-radius: 18rpx; background: var(--paper); }
+.scenario-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12rpx; }
+.scenario { margin: 0; padding: 18rpx 4rpx; border: 1rpx solid var(--line); border-radius: 18rpx; background: var(--paper); color: var(--ink-2); font-size: 22rpx; }
+.scenario.active { background: var(--ink); color: #fff; border-color: var(--ink); }

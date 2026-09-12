@@ -11,6 +11,7 @@ function exportLedgerCsv(state) {
   const rows = [['日期', '类型', '分类/说明', '金额', '从账户', '到账户', '备注']];
   (state.ledger.expenses || []).forEach(item => rows.push([item.date, '支出', names[item.category] || item.category, formatFen(item.amount), item.account || 'BANK1', 'OUT', item.note || '']));
   (state.ledger.transfers || []).forEach(item => rows.push([item.date, '划转', item.kind, formatFen(item.amount), item.from, item.to, '']));
+  (state.ledger.specials || []).forEach(item => rows.push([item.date, '专项', item.reason, formatFen(item.amount), item.from, item.to, item.note || '']));
   (state.ledger.adjusts || []).forEach(item => rows.push([item.date, '校准', item.acct, formatFen(item.diff || 0), '', '', item.note || '']));
   return `\ufeff${rows.map(row => row.map(escapeCell).join(',')).join('\n')}`;
 }

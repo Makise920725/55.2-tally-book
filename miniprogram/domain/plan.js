@@ -17,6 +17,7 @@ const DEFAULT_CATEGORIES = Object.freeze([
   { id: 'charge', name: '充电', mark: '电' }, { id: 'cloth', name: '衣物', mark: '衣' },
   { id: 'fun', name: '娱乐', mark: '娱' }, { id: 'other', name: '其他', mark: '杂' }
 ]);
+const SCENARIOS = Object.freeze({ 省: 4829, 中: 5519, 松: 6373 });
 
 function allocationForMode(dailyBudget, mode) {
   return mode === 'three-day' ? dailyBudget * 3 : dailyBudget;
@@ -42,7 +43,7 @@ const PERIOD_INPUTS = Object.freeze([
   ['2027-01-25', '2027-01-25', '2026-12-21', '2027-01-20', '2027-02-05', 12, 4340]
 ]);
 
-function derivePeriods() {
+function derivePeriods({ dailyBudget = CONFIG.dailyBudget } = {}) {
   let pocket = 0;
   return PERIOD_INPUTS.map((input, index) => {
     const [payDate, nominalPayDate, workStart, workEnd, rangeEnd, days, specialOut] = input;
@@ -50,7 +51,7 @@ function derivePeriods() {
     const salary = workDays * CONFIG.salaryPerDay;
     const totalIn = salary + CONFIG.monthlyAllowance;
     const billTotal = BILL_TOTALS[index];
-    const budgetToPool = days * CONFIG.dailyBudget;
+    const budgetToPool = days * dailyBudget;
     // 转入小荷包的金额不扣专项；专项是随后从③支付的计划内支出。
     // 因此 pocketAfter = 上期余额 + payday_save - special_out。
     const saveToPocket = totalIn - billTotal - budgetToPool;
@@ -59,8 +60,12 @@ function derivePeriods() {
   });
 }
 
-function createInitialState() {
-  return { version: 1, schemaVersion: 4, config: CONFIG, mode: 'daily', categories: DEFAULT_CATEGORIES, openingBalances: { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 }, daySlots: {}, paydaySteps: {}, ledger: { expenses: [], transfers: [], adjusts: [] } };
+function periodForDate(date, periods = derivePeriods()) {
+  return periods.find(item => date >= item.rangeStart && date <= item.rangeEnd) || periods[0];
 }
 
-module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, allocationForMode, progressToTarget, daysUntil, derivePeriods, createInitialState };
+function createInitialState() {
+  return { version: 1, schemaVersion: 4, config: { ...CONFIG, scenario: '中' }, mode: 'daily', categories: DEFAULT_CATEGORIES, openingBalances: { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 }, daySlots: {}, paydaySteps: {}, executedPaydays: {}, ledger: { expenses: [], transfers: [], specials: [], adjusts: [] } };
+}
+
+module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, SCENARIOS, allocationForMode, progressToTarget, daysUntil, derivePeriods, periodForDate, createInitialState };

@@ -2,11 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { yuanToFen, formatFen } = require('../miniprogram/domain/money');
 const { countPayableWorkdays } = require('../miniprogram/domain/calendar');
-const { CONFIG, derivePeriods, allocationForMode, progressToTarget, daysUntil } = require('../miniprogram/domain/plan');
+const { CONFIG, derivePeriods, allocationForMode, progressToTarget, daysUntil, periodForDate } = require('../miniprogram/domain/plan');
 const { createExpense, createTransfer, remainingDailyBudget, dailySeries, accountBalances, ACCT } = require('../miniprogram/domain/ledger');
 const store = require('../miniprogram/store/store');
 const { migrate, SCHEMA_VERSION } = require('../miniprogram/utils/storage');
 const { exportLedgerCsv } = require('../miniprogram/utils/csv');
+const { exportPaydayIcs } = require('../miniprogram/utils/ics');
 
 test('金额使用整数分并正确格式化', () => {
   assert.equal(yuanToFen(55.19), 5519);
@@ -87,4 +88,10 @@ test('超支时只为新增超支额生成余额宝补差划转', () => {
   store.addExpense({ date: '2026-09-12', category: 'snack', amountYuan: 5 });
   transfers = store.getState().ledger.transfers.filter(item => item.kind === 'overspend_cover');
   assert.deepEqual(transfers.map(item => item.amount), [481, 500]);
+});
+
+test('自动期次和 ICS 发薪提醒可派生', () => {
+  assert.equal(periodForDate('2026-10-23').index, 2);
+  assert.match(exportPaydayIcs(derivePeriods()), /BEGIN:VCALENDAR/);
+  assert.match(exportPaydayIcs(derivePeriods()), /20260924/);
 });

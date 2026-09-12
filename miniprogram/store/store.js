@@ -1,4 +1,4 @@
-const { createExpense, createTransfer, ACCT, remainingDailyBudget } = require('../domain/ledger');
+const { createExpense, createTransfer, createSpecial, ACCT, remainingDailyBudget } = require('../domain/ledger');
 const { yuanToFen } = require('../domain/money');
 const storage = require('../utils/storage');
 
@@ -77,4 +77,35 @@ function addAdjust({ date, acct, realBalanceYuan, bookBalanceYuan, note = '' }) 
   return commit({ ...current, ledger: { ...current.ledger, adjusts: [...current.ledger.adjusts, adjust] } });
 }
 
-module.exports = { getState, subscribe, addExpense, settleDay, reopenDay, togglePaydayStep, setMode, addAdjust, reset };
+function executePayday(periodIndex = 1) {
+  const current = getState();
+  if (current.executedPaydays[periodIndex]) return { state: current, persisted: true, alreadyExecuted: true };
+  const period = current.periods[periodIndex - 1];
+  if (!period) throw new RangeError('unknown payday period');
+  const date = period.payDate;
+  const transfers = [
+    createTransfer({ id: `pay_in_${periodIndex}`, date, from: ACCT.OUT, to: ACCT.BANK1, amount: period.totalIn, kind: 'payday_income' }),
+    createTransfer({ id: `bill_${periodIndex}`, date, from: ACCT.BANK1, to: ACCT.BILL, amount: period.billTotal, kind: 'bill_repay' }),
+    createTransfer({ id: `budget_${periodIndex}`, date, from: ACCT.BANK1, to: ACCT.POOL2, amount: period.budgetToPool, kind: 'payday_budget' }),
+    createTransfer({ id: `save_${periodIndex}`, date, from: ACCT.BANK1, to: ACCT.POCKET3, amount: period.saveToPocket, kind: 'payday_save' })
+  ];
+  const paydaySteps = { ...current.paydaySteps };
+  for (let step = 1; step <= 5; step += 1) paydaySteps[`${periodIndex}-${step}`] = true;
+  return commit({ ...current, paydaySteps, executedPaydays: { ...current.executedPaydays, [periodIndex]: true }, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, ...transfers] } });
+}
+
+function addSpecial({ date, reason, amountYuan, note = '' }) {
+  const special = createSpecial({ id: `special_${Date.now()}`, date, reason, amount: yuanToFen(amountYuan), note });
+  const current = getState();
+  return commit({ ...current, ledger: { ...current.ledger, specials: [...(current.ledger.specials || []), special] } });
+}
+
+function setScenario(scenario) {
+  const { SCENARIOS, derivePeriods } = require('../domain/plan');
+  if (!Object.prototype.hasOwnProperty.call(SCENARIOS, scenario)) throw new TypeError('unknown scenario');
+  const current = getState();
+  const dailyBudget = SCENARIOS[scenario];
+  return commit({ ...current, config: { ...current.config, dailyBudget, scenario }, periods: derivePeriods({ dailyBudget }) });
+}
+
+module.exports = { getState, subscribe, addExpense, settleDay, reopenDay, togglePaydayStep, executePayday, addSpecial, setMode, setScenario, addAdjust, reset };

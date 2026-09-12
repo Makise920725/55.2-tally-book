@@ -2,6 +2,7 @@ const { CONFIG } = require('../../domain/plan');
 const { formatFen } = require('../../domain/money');
 const store = require('../../store/store');
 const { exportLedgerCsv } = require('../../utils/csv');
+const { exportPaydayIcs } = require('../../utils/ics');
 
 Page({
   data: { config: null, expenseCount: 0, mode: 'daily', realBalance: '', bookBalance: '', adjustNote: '' },
@@ -9,12 +10,16 @@ Page({
   onUnload() { if (this.unsubscribe) this.unsubscribe(); },
   refresh() {
     const state = store.getState();
-    this.setData({ config: { ...CONFIG, dailyBudget: formatFen(CONFIG.dailyBudget), goalMinimum: formatFen(CONFIG.goalMinimum), targetSavings: formatFen(CONFIG.targetSavings) }, expenseCount: state.ledger.expenses.length, mode: state.mode || 'daily' });
+    this.setData({ config: { ...state.config, dailyBudget: formatFen(state.config.dailyBudget), goalMinimum: formatFen(state.config.goalMinimum), targetSavings: formatFen(state.config.targetSavings) }, expenseCount: state.ledger.expenses.length, mode: state.mode || 'daily' });
   },
   exportCsv() {
     const csv = exportLedgerCsv(store.getState());
     wx.setClipboardData({ data: csv, success: () => wx.showToast({ title: 'CSV 已复制', icon: 'none' }) });
   },
+  exportIcs() {
+    wx.setClipboardData({ data: exportPaydayIcs(store.getState().periods), success: () => wx.showToast({ title: 'ICS 已复制', icon: 'none' }) });
+  },
+  selectScenario(event) { store.setScenario(event.currentTarget.dataset.scenario); },
   toggleMode() { store.setMode(this.data.mode === 'daily' ? 'three-day' : 'daily'); },
   inputReal(event) { this.setData({ realBalance: event.detail.value }); },
   inputBook(event) { this.setData({ bookBalance: event.detail.value }); },

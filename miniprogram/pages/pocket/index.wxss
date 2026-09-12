@@ -1,2 +1,3 @@
 .amount { color: var(--ink); }
 .target-line { display: flex; justify-content: space-between; color: var(--dim); font-family: "Noto Serif SC", "Songti SC", serif; font-size: 21rpx; }
+.special-input { margin: 14rpx 0; padding: 22rpx; border: 1rpx solid var(--line); border-radius: 18rpx; background: var(--paper); }
