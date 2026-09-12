@@ -48,7 +48,7 @@ Page({
     if (result.blocked) { this.setData({ keyboardVisible: false }); wx.showToast({ title: '今天已封账，可先撤销封账', icon: 'none' }); return; }
     this.setData({ amount: '', keypadAmount: '0', keyboardVisible: false, persisted: result.persisted });
     const left = remainingDailyBudget(result.state.ledger.expenses, dateKey(), result.state.config.dailyBudget);
-    wx.showToast({ title: left < 0 ? `已记一笔，超出 ¥${formatFen(-left)}` : '已记一笔', icon: 'none' });
+    wx.showToast({ title: left < 0 ? `已记一笔，补差 ¥${formatFen(-left)}` : '已记一笔', icon: 'none' });
   },
   settleDay() {
     const result = store.settleDay({ date: dateKey(), dailyBudget: CONFIG.dailyBudget });

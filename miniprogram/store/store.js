@@ -22,14 +22,26 @@ function addExpense({ date, category, amountYuan, note = '' }) {
     return { state: current, persisted: true, blocked: 'closed' };
   }
   const expense = createExpense({ id: `expense_${Date.now()}`, date, category, amount: yuanToFen(amountYuan), note });
-  return commit({ ...current, ledger: { ...current.ledger, expenses: [...current.ledger.expenses, expense] } });
+  const beforeSpent = current.ledger.expenses.filter(item => item.date === date).reduce((total, item) => total + item.amount, 0);
+  const afterSpent = beforeSpent + expense.amount;
+  const budget = current.config.dailyBudget;
+  const beforeOver = Math.max(0, beforeSpent - budget);
+  const afterOver = Math.max(0, afterSpent - budget);
+  const transfers = [...current.ledger.transfers];
+  if (afterOver > beforeOver) {
+    transfers.push(createTransfer({ id: `cover_${Date.now()}`, date, from: ACCT.POOL2, to: ACCT.BANK1, amount: afterOver - beforeOver, kind: 'overspend_cover' }));
+  }
+  return commit({ ...current, ledger: { ...current.ledger, expenses: [...current.ledger.expenses, expense], transfers } });
 }
 
 function settleDay({ date, dailyBudget }) {
   const current = getState();
   if (current.daySlots && current.daySlots[date] && current.daySlots[date].closed) return { state: current, persisted: true, transfer: null, alreadyClosed: true };
   const amount = Math.max(0, remainingDailyBudget(current.ledger.expenses, date, dailyBudget));
-  if (!amount) return { state: current, persisted: true, transfer: null };
+  if (!amount) {
+    const daySlots = { ...current.daySlots, [date]: { ...(current.daySlots[date] || {}), closed: true, refunded: 0 } };
+    return { ...commit({ ...current, daySlots }), transfer: null };
+  }
   const transfer = createTransfer({ id: `refund_${Date.now()}`, date, from: ACCT.BANK1, to: ACCT.POOL2, amount, kind: 'daily_refund' });
   const daySlots = { ...current.daySlots, [date]: { closed: true, refunded: amount } };
   return { ...commit({ ...current, daySlots, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }), transfer };

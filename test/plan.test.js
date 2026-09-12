@@ -4,6 +4,7 @@ const { yuanToFen, formatFen } = require('../miniprogram/domain/money');
 const { countPayableWorkdays } = require('../miniprogram/domain/calendar');
 const { CONFIG, derivePeriods, allocationForMode, progressToTarget, daysUntil } = require('../miniprogram/domain/plan');
 const { createExpense, createTransfer, remainingDailyBudget, dailySeries, accountBalances, ACCT } = require('../miniprogram/domain/ledger');
+const store = require('../miniprogram/store/store');
 const { migrate, SCHEMA_VERSION } = require('../miniprogram/utils/storage');
 const { exportLedgerCsv } = require('../miniprogram/utils/csv');
 
@@ -71,4 +72,19 @@ test('账户余额由划转和支出流水派生', () => {
   assert.equal(balances.BANK1, 38500);
   assert.equal(balances.POCKET3, 10000);
   assert.equal(balances.OUT, 1500);
+});
+
+test('超支时只为新增超支额生成余额宝补差划转', () => {
+  global.wx = {
+    getStorageSync: () => null,
+    setStorageSync: () => {},
+    removeStorageSync: () => {}
+  };
+  store.reset();
+  store.addExpense({ date: '2026-09-12', category: 'meal', amountYuan: 60 });
+  let transfers = store.getState().ledger.transfers.filter(item => item.kind === 'overspend_cover');
+  assert.deepEqual(transfers.map(item => item.amount), [481]);
+  store.addExpense({ date: '2026-09-12', category: 'snack', amountYuan: 5 });
+  transfers = store.getState().ledger.transfers.filter(item => item.kind === 'overspend_cover');
+  assert.deepEqual(transfers.map(item => item.amount), [481, 500]);
 });
