@@ -37,13 +37,16 @@ function addExpense({ date, category, amountYuan, note = '' }) {
 function settleDay({ date, dailyBudget }) {
   const current = getState();
   if (current.daySlots && current.daySlots[date] && current.daySlots[date].closed) return { state: current, persisted: true, transfer: null, alreadyClosed: true };
-  const amount = Math.max(0, remainingDailyBudget(current.ledger.expenses, date, dailyBudget));
+  const slot = current.daySlots[date] || {};
+  const allocated = Number.isInteger(slot.allocated) ? slot.allocated : dailyBudget;
+  const spent = current.ledger.expenses.filter(item => item.date === date).reduce((total, item) => total + item.amount, 0);
+  const amount = Math.max(0, allocated - spent);
   if (!amount) {
-    const daySlots = { ...current.daySlots, [date]: { ...(current.daySlots[date] || {}), closed: true, refunded: 0 } };
+    const daySlots = { ...current.daySlots, [date]: { ...slot, allocated, closed: true, refunded: 0 } };
     return { ...commit({ ...current, daySlots }), transfer: null };
   }
   const transfer = createTransfer({ id: `refund_${Date.now()}`, date, from: ACCT.BANK1, to: ACCT.POOL2, amount, kind: 'daily_refund' });
-  const daySlots = { ...current.daySlots, [date]: { closed: true, refunded: amount } };
+  const daySlots = { ...current.daySlots, [date]: { ...slot, allocated, closed: true, refunded: amount } };
   return { ...commit({ ...current, daySlots, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }), transfer };
 }
 
@@ -118,7 +121,8 @@ function allocateDay({ date }) {
   const existing = current.ledger.transfers.some(item => item.date === date && item.kind === 'daily_alloc');
   if (existing) return { state: current, persisted: true, alreadyAllocated: true };
   const transfer = createTransfer({ id: `alloc_${Date.now()}`, date, from: ACCT.POOL2, to: ACCT.BANK1, amount, kind: 'daily_alloc' });
-  return { ...commit({ ...current, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }), transfer };
+  const daySlots = { ...current.daySlots, [date]: { ...(current.daySlots[date] || {}), allocated: amount } };
+  return { ...commit({ ...current, daySlots, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }), transfer };
 }
 
 function addCategory({ id, name, mark }) {

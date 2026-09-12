@@ -118,3 +118,18 @@ test('预算情景切换会重算每日额度和五期预算', () => {
   assert.equal(store.getState().periods[0].budgetToPool, 4829 * 29);
   store.setScenario('中');
 });
+
+test('旧数据迁移会补回计划开始日', () => {
+  const migrated = migrate({ config: { dailyBudget: 5519 }, ledger: { expenses: [], transfers: [], adjusts: [] } });
+  assert.equal(migrated.config.startDate, '2026-09-24');
+  assert.equal(migrated.periods.length, 5);
+});
+
+test('当天花 30 元会把 25.19 元退回预算池', () => {
+  global.wx = { getStorageSync: () => null, setStorageSync: () => {}, removeStorageSync: () => {} };
+  store.reset();
+  store.addExpense({ date: '2026-09-24', category: 'meal', amountYuan: 30 });
+  const result = store.settleDay({ date: '2026-09-24', dailyBudget: 5519 });
+  assert.equal(result.transfer.amount, 2519);
+  assert.equal(result.state.daySlots['2026-09-24'].refunded, 2519);
+});

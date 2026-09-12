@@ -1,6 +1,6 @@
 const { CONFIG, derivePeriods, progressToTarget, daysUntil } = require('../../domain/plan');
 const { formatFen } = require('../../domain/money');
-const { accountBalances, ACCT } = require('../../domain/ledger');
+const { accountBalances, ACCT, sum } = require('../../domain/ledger');
 const store = require('../../store/store');
 
 Page({
@@ -9,14 +9,20 @@ Page({
   onUnload() { if (this.unsubscribe) this.unsubscribe(); },
   refresh() {
     const state = store.getState();
-    const periods = (state.periods || derivePeriods()).map(item => ({
+    let actualAfter = 0;
+    const periods = (state.periods || derivePeriods()).map(item => {
+      const saved = sum(state.ledger.transfers, transfer => transfer.kind === 'payday_save' && transfer.date === item.payDate);
+      const special = sum(state.ledger.specials || [], expense => expense.date >= item.rangeStart && expense.date <= item.rangeEnd);
+      actualAfter += saved - special;
+      return {
       ...item,
       save: formatFen(item.saveToPocket),
       pocket: formatFen(item.pocketAfter),
       special: item.specialOut ? `专项 −¥${formatFen(item.specialOut)}` : '无专项支出',
-      completed: Object.keys(state.paydaySteps || {}).filter(key => key.indexOf(`${item.index}-`) === 0 && state.paydaySteps[key]).length === 5
-    }));
-    const currentFen = periods.at(-1).pocketAfter;
+      actualAfter: formatFen(actualAfter),
+      completed: !!(state.executedPaydays && state.executedPaydays[item.index])
+    }; });
+    const currentFen = accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials)[ACCT.POCKET3];
     const balances = accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials);
     this.setData({ current: formatFen(currentFen), target: formatFen(CONFIG.targetSavings), goal: formatFen(CONFIG.goalMinimum), goalProgress: progressToTarget(currentFen, CONFIG.goalMinimum).toFixed(1), targetProgress: progressToTarget(currentFen, CONFIG.targetSavings).toFixed(1), daysLeft: Math.max(0, daysUntil(CONFIG.deadline)), bankBalance: formatFen(balances[ACCT.BANK1]), poolBalance: formatFen(balances[ACCT.POOL2]), pocketBalance: formatFen(balances[ACCT.POCKET3]), periods });
   }
