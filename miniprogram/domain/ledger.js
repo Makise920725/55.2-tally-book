@@ -14,4 +14,18 @@ function accountBalances(transfers, expenses, opening = {}) {
 function dailySpent(expenses, date) { return sum(expenses, item => item.date === date); }
 function remainingDailyBudget(expenses, date, dailyBudget) { return dailyBudget - dailySpent(expenses, date); }
 
-module.exports = { ACCT, sum, accountBalances, dailySpent, remainingDailyBudget };
+function createExpense({ id, date, category, amount, note = '' }) {
+  if (!id || !date || !category || !Number.isInteger(amount) || amount <= 0) {
+    throw new TypeError('expense requires id, date, category and positive integer amount');
+  }
+  return { id, date, category, amount, note, account: ACCT.BANK1, createdAt: new Date().toISOString() };
+}
+
+function createTransfer({ id, date, from, to, amount, kind }) {
+  if (!id || !date || !from || !to || !Number.isInteger(amount) || amount <= 0 || !kind) {
+    throw new TypeError('transfer requires id, date, accounts, kind and positive integer amount');
+  }
+  return { id, date, from, to, amount, kind, createdAt: new Date().toISOString() };
+}
+
+module.exports = { ACCT, sum, accountBalances, dailySpent, remainingDailyBudget, createExpense, createTransfer };

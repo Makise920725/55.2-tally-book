@@ -1,7 +1,8 @@
-const { createInitialState } = require('./domain/plan');
+const { getState } = require('./store/store');
 
 App({
   globalData: {
-    state: createInitialState()
-  }
+    get state() { return getState(); }
+  },
+  onLaunch() { getState(); }
 });

@@ -1,1 +1,10 @@
 .hero { text-align: center; padding: 72rpx 28rpx; }
+.section-title { margin-bottom: 20rpx; font-size: 30rpx; font-weight: 600; }
+.categories { display: flex; flex-wrap: wrap; gap: 12rpx; }
+.category { margin: 0; padding: 10rpx 16rpx; border: 1rpx solid #e4dfd3; border-radius: 999rpx; background: #fffdf8; color: #55544e; font-size: 24rpx; line-height: 1.5; }
+.category.selected { border-color: #2e5d50; background: #e7f0eb; color: #2e5d50; }
+.amount-input { margin: 24rpx 0; padding: 20rpx; border-radius: 12rpx; background: #f2efe7; }
+.primary, .settle { background: #2e5d50; color: #fff; }
+.settle { margin-bottom: 24rpx; }
+.entry { display: flex; justify-content: space-between; padding: 16rpx 0; border-bottom: 1rpx solid #ebe7dc; }
+.muted { color: #99958b; }

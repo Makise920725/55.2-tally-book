@@ -2,5 +2,16 @@
   <view class="eyebrow">55块2 · 今日</view>
   <view class="title">今天还能花</view>
   <view class="card hero"><view class="amount">¥ {{remaining}}</view><view>每日额度 ¥{{dailyBudget}}</view></view>
-  <view class="card">今日流水</view>
+  <view class="card">
+    <view class="section-title">记一笔</view>
+    <view class="categories"><button wx:for="{{categories}}" wx:key="id" class="category {{selectedCategory === item.id ? 'selected' : ''}}" data-category="{{item.id}}" bindtap="selectCategory">{{item.icon}} {{item.name}}</button></view>
+    <input class="amount-input" type="digit" value="{{amount}}" placeholder="金额，例如 15.00" bindinput="inputAmount" />
+    <button class="primary" bindtap="addExpense">保存支出</button>
+  </view>
+  <view class="card">
+    <view class="section-title">今日流水</view>
+    <view wx:if="{{entries.length === 0}}" class="muted">还没有记录</view>
+    <view wx:for="{{entries}}" wx:key="id" class="entry"><text>{{item.category}}</text><text>− ¥{{item.amount / 100}}</text></view>
+  </view>
+  <button class="settle" bindtap="settleDay">晚间结算：退回余额宝</button>
 </view>

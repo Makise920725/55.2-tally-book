@@ -11,6 +11,12 @@ const CONFIG = Object.freeze({
 });
 
 const BILL_TOTALS = Object.freeze([184432, 137661, 92829, 83652, 72259]);
+const DEFAULT_CATEGORIES = Object.freeze([
+  { id: 'meal', name: '吃饭', icon: '🍚' }, { id: 'cat', name: '猫', icon: '🐱' },
+  { id: 'daily', name: '日用', icon: '🧴' }, { id: 'snack', name: '零食', icon: '🍿' },
+  { id: 'charge', name: '充电', icon: '🛴' }, { id: 'cloth', name: '衣物', icon: '👕' },
+  { id: 'fun', name: '娱乐', icon: '🎮' }, { id: 'other', name: '其他', icon: '➕' }
+]);
 
 const PERIOD_INPUTS = Object.freeze([
   ['2026-09-24', '2026-09-25', '2026-08-21', '2026-09-20', '2026-10-22', 29, 0],
@@ -38,7 +44,7 @@ function derivePeriods() {
 }
 
 function createInitialState() {
-  return { version: 1, config: CONFIG, periods: derivePeriods(), ledger: { expenses: [], transfers: [], adjusts: [] } };
+  return { version: 1, schemaVersion: 3, config: CONFIG, periods: derivePeriods(), categories: DEFAULT_CATEGORIES, daySlots: {}, ledger: { expenses: [], transfers: [], adjusts: [] } };
 }
 
-module.exports = { CONFIG, BILL_TOTALS, derivePeriods, createInitialState };
+module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, derivePeriods, createInitialState };
