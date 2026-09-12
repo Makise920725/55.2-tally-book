@@ -1,2 +1,3 @@
 .card view { padding: 16rpx 0; }
 .reset-button { margin-top: 16rpx; background: transparent; color: var(--dim); border: 1rpx solid var(--line); }
+.adjust-input { margin: 16rpx 0; padding: 22rpx; border: 1rpx solid var(--line); border-radius: 18rpx; background: var(--paper); }

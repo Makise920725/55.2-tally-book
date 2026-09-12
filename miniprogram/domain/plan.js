@@ -18,6 +18,10 @@ const DEFAULT_CATEGORIES = Object.freeze([
   { id: 'fun', name: '娱乐', mark: '娱' }, { id: 'other', name: '其他', mark: '杂' }
 ]);
 
+function allocationForMode(dailyBudget, mode) {
+  return mode === 'three-day' ? dailyBudget * 3 : dailyBudget;
+}
+
 const PERIOD_INPUTS = Object.freeze([
   ['2026-09-24', '2026-09-25', '2026-08-21', '2026-09-20', '2026-10-22', 29, 0],
   ['2026-10-23', '2026-10-25', '2026-09-21', '2026-10-20', '2026-11-24', 33, 0],
@@ -44,7 +48,7 @@ function derivePeriods() {
 }
 
 function createInitialState() {
-  return { version: 1, schemaVersion: 4, config: CONFIG, periods: derivePeriods(), categories: DEFAULT_CATEGORIES, daySlots: {}, paydaySteps: {}, ledger: { expenses: [], transfers: [], adjusts: [] } };
+  return { version: 1, schemaVersion: 4, config: CONFIG, mode: 'daily', categories: DEFAULT_CATEGORIES, daySlots: {}, paydaySteps: {}, ledger: { expenses: [], transfers: [], adjusts: [] } };
 }
 
-module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, derivePeriods, createInitialState };
+module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, allocationForMode, derivePeriods, createInitialState };

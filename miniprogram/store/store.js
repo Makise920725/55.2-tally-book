@@ -51,4 +51,18 @@ function togglePaydayStep(periodIndex, step) {
   return commit({ ...current, paydaySteps });
 }
 
-module.exports = { getState, subscribe, addExpense, settleDay, reopenDay, togglePaydayStep, reset };
+function setMode(mode) {
+  if (mode !== 'daily' && mode !== 'three-day') throw new TypeError('mode must be daily or three-day');
+  const current = getState();
+  return commit({ ...current, mode });
+}
+
+function addAdjust({ date, acct, realBalanceYuan, bookBalanceYuan, note = '' }) {
+  const realBalance = yuanToFen(realBalanceYuan);
+  const bookBalance = yuanToFen(bookBalanceYuan);
+  const adjust = { id: `adjust_${Date.now()}`, date, acct, realBalance, bookBalance, diff: realBalance - bookBalance, note, createdAt: new Date().toISOString() };
+  const current = getState();
+  return commit({ ...current, ledger: { ...current.ledger, adjusts: [...current.ledger.adjusts, adjust] } });
+}
+
+module.exports = { getState, subscribe, addExpense, settleDay, reopenDay, togglePaydayStep, setMode, addAdjust, reset };

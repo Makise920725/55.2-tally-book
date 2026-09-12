@@ -13,6 +13,7 @@ function migrate(state) {
   next.categories = next.categories || require('../domain/plan').DEFAULT_CATEGORIES;
   next.daySlots = next.daySlots || {};
   next.paydaySteps = next.paydaySteps || {};
+  next.mode = next.mode || 'daily';
   next.schemaVersion = SCHEMA_VERSION;
   return next;
 }

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { yuanToFen, formatFen } = require('../miniprogram/domain/money');
 const { countPayableWorkdays } = require('../miniprogram/domain/calendar');
-const { CONFIG, derivePeriods } = require('../miniprogram/domain/plan');
+const { CONFIG, derivePeriods, allocationForMode } = require('../miniprogram/domain/plan');
 const { createExpense, remainingDailyBudget } = require('../miniprogram/domain/ledger');
 const { migrate, SCHEMA_VERSION } = require('../miniprogram/utils/storage');
 const { exportLedgerCsv } = require('../miniprogram/utils/csv');
@@ -44,4 +44,9 @@ test('账本可以导出为带 BOM 的 CSV', () => {
   const csv = exportLedgerCsv({ categories: [{ id: 'meal', name: '吃饭' }], ledger: { expenses: [{ date: '2026-09-12', category: 'meal', amount: 1500, note: '午饭,面' }], transfers: [], adjusts: [] } });
   assert.ok(csv.startsWith('\ufeff日期,类型'));
   assert.match(csv, /"午饭,面"/);
+});
+
+test('三天一结的单次额度按三日计算', () => {
+  assert.equal(allocationForMode(CONFIG.dailyBudget, 'daily'), 5519);
+  assert.equal(allocationForMode(CONFIG.dailyBudget, 'three-day'), 16557);
 });
