@@ -32,11 +32,12 @@ function addExpense({ date, category, amountYuan, note = '' }) {
   const current = getState();
   const planBlock = planOperationBlock(current, date);
   if (planBlock) return { state: current, persisted: true, blocked: planBlock };
-  if (current.daySlots && current.daySlots[date] && current.daySlots[date].closed) {
+  const range = resolveBatchRange(current, date);
+  if (batchIsClosed(current, range)) {
     return { state: current, persisted: true, blocked: 'closed' };
   }
   const expense = createExpense({ id: uid('expense'), date, category, amount: yuanToFen(amountYuan), note });
-  const { start, end } = batchRange(date, current.mode);
+  const { start, end } = range;
   const beforeSpent = sumExpensesBetween(current.ledger.expenses, start, end);
   const afterSpent = beforeSpent + expense.amount;
   const budget = allocationOf(current, start, current.config.dailyBudget);
@@ -76,6 +77,30 @@ function allocationOf(current, rangeStart, fallbackBudget) {
   return allocationForMode(fallbackBudget, current.mode);
 }
 
+function resolveBatchRange(current, date) {
+  const slots = current.daySlots || {};
+  const recorded = Object.values(slots).find(slot => slot && slot.batchStart && slot.batchEnd && date >= slot.batchStart && date <= slot.batchEnd);
+  if (recorded) return { start: recorded.batchStart, end: recorded.batchEnd, mode: recorded.batchMode || current.mode };
+  const range = batchRange(date, current.mode);
+  return { ...range, mode: current.mode };
+}
+
+function batchIsClosed(current, range) {
+  return Object.keys(current.daySlots || {}).some(date => date >= range.start && date <= range.end && current.daySlots[date].closed);
+}
+
+function markBatchSlots(daySlots, range, values) {
+  const next = { ...daySlots };
+  let cursor = parseDate(range.start);
+  const end = parseDate(range.end);
+  while (cursor <= end) {
+    const key = dateKey(cursor);
+    next[key] = { ...(next[key] || {}), ...values, batchStart: range.start, batchEnd: range.end, batchMode: range.mode };
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return next;
+}
+
 function settleDay({ date, dailyBudget } = {}) {
   const current = getState();
   // 计划区间外没有额度可退，否则会把整日预算凭空退回余额宝。
@@ -84,13 +109,15 @@ function settleDay({ date, dailyBudget } = {}) {
   if (current.daySlots && current.daySlots[date] && current.daySlots[date].closed) return { state: current, persisted: true, transfer: null, alreadyClosed: true };
   // 兜底必须用当前情景的每日额度，硬编码 CONFIG.dailyBudget 会在“省 / 松”情景下退错钱。
   const budget = Number.isInteger(dailyBudget) ? dailyBudget : current.config.dailyBudget;
-  const slot = current.daySlots[date] || {};
-  const { start: allocationDate, end: expenseEnd } = batchRange(date, current.mode);
+  const range = resolveBatchRange(current, date);
+  const allocationDate = range.start;
+  const expenseEnd = range.end;
   const expenseStart = allocationDate;
-  const allocated = current.mode === 'three-day'
-    ? allocationOf(current, allocationDate, budget)
-    : (Number.isInteger(slot.allocated) ? slot.allocated : budget);
-  if (current.mode === 'three-day' && date < expenseEnd) {
+  const allocated = allocationOf(current, allocationDate, budget);
+  const hasAllocation = current.ledger.transfers.some(item => item.date === allocationDate && item.kind === 'daily_alloc')
+    || Number.isInteger((current.daySlots[allocationDate] || {}).allocated);
+  if (!hasAllocation) return { state: current, persisted: true, transfer: null, blocked: 'not_allocated' };
+  if (range.mode === 'three-day' && date < expenseEnd) {
     return { state: current, persisted: true, batchPending: true, allocationDate, settlementDate: expenseEnd };
   }
   const spent = sumExpensesBetween(current.ledger.expenses, expenseStart, expenseEnd);
@@ -100,11 +127,11 @@ function settleDay({ date, dailyBudget } = {}) {
   const alreadyRefunded = sumTransfersBetween(current.ledger.transfers, expenseStart, expenseEnd, 'daily_refund');
   const amount = Math.max(0, allocated + covered - spent - alreadyRefunded);
   if (!amount) {
-    const daySlots = { ...current.daySlots, [date]: { ...slot, allocated, closed: true, refunded: alreadyRefunded } };
+    const daySlots = markBatchSlots(current.daySlots, range, { allocated, closed: true, refunded: alreadyRefunded });
     return { ...commit({ ...current, daySlots }), transfer: null, alreadyRefunded };
   }
   const transfer = createTransfer({ id: uid('refund'), date, from: ACCT.BANK1, to: ACCT.POOL2, amount, kind: 'daily_refund' });
-  const daySlots = { ...current.daySlots, [date]: { ...slot, allocated, closed: true, refunded: alreadyRefunded + amount } };
+  const daySlots = markBatchSlots(current.daySlots, range, { allocated, closed: true, refunded: alreadyRefunded + amount });
   return { ...commit({ ...current, daySlots, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }), transfer, alreadyRefunded };
 }
 
@@ -116,7 +143,7 @@ function sumTransfersBetween(transfers, start, end, kind) {
 function reopenDay(date) {
   const current = getState();
   if (!current.daySlots || !current.daySlots[date] || !current.daySlots[date].closed) return { state: current, persisted: true };
-  const { start, end } = batchRange(date, current.mode);
+  const { start, end } = resolveBatchRange(current, date);
   const refunded = sumTransfersBetween(current.ledger.transfers, start, end, 'daily_refund');
   const transfers = current.ledger.transfers.filter(item => !(item.kind === 'daily_refund' && item.date >= start && item.date <= end));
   const daySlots = Object.keys(current.daySlots).reduce((acc, key) => {
@@ -216,14 +243,15 @@ function allocateDay({ date }) {
   const planBlock = planOperationBlock(current, date);
   if (planBlock) return { state: current, persisted: true, blocked: planBlock };
   // 已封账说明本批次已经结算清楚，再点一次会把额度重复划进工资卡。
-  if (current.daySlots[date] && current.daySlots[date].closed) return { state: current, persisted: true, blocked: 'closed' };
+  const range = resolveBatchRange(current, date);
+  if (batchIsClosed(current, range)) return { state: current, persisted: true, blocked: 'closed' };
   const dayNumber = daysFrom(CONFIG.startDate, date);
   const amount = allocationForMode(current.config.dailyBudget, current.mode) * (current.mode === 'three-day' ? (dayNumber % 3 === 0 ? 1 : 0) : 1);
   if (!amount) return { state: current, persisted: true, skipped: true };
-  const existing = current.ledger.transfers.some(item => item.date === date && item.kind === 'daily_alloc');
+  const existing = current.ledger.transfers.some(item => item.date === range.start && item.kind === 'daily_alloc');
   if (existing) return { state: current, persisted: true, alreadyAllocated: true };
   const transfer = createTransfer({ id: uid('alloc'), date, from: ACCT.POOL2, to: ACCT.BANK1, amount, kind: 'daily_alloc' });
-  const daySlots = { ...current.daySlots, [date]: { ...(current.daySlots[date] || {}), allocated: amount } };
+  const daySlots = { ...current.daySlots, [date]: { ...(current.daySlots[date] || {}), allocated: amount, batchStart: range.start, batchEnd: range.end, batchMode: current.mode } };
   return { ...commit({ ...current, daySlots, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }), transfer };
 }
 

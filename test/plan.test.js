@@ -129,6 +129,7 @@ test('旧数据迁移会补回计划开始日', () => {
 test('当天花 30 元会把 25.19 元退回预算池', () => {
   global.wx = { getStorageSync: () => null, setStorageSync: () => {}, removeStorageSync: () => {} };
   store.reset();
+  store.allocateDay({ date: '2026-09-24' });
   store.addExpense({ date: '2026-09-24', category: 'meal', amountYuan: 30 });
   const result = store.settleDay({ date: '2026-09-24', dailyBudget: 5519 });
   assert.equal(result.transfer.amount, 2519);
@@ -172,6 +173,7 @@ test('“省”情景下晚间结算按当前日额度退款，而不是硬编�
   store.reset();
   store.setScenario('省');
   store.executePayday(1, '2026-09-24');
+  store.allocateDay({ date: '2026-09-24' });
   store.addExpense({ date: '2026-09-24', category: 'meal', amountYuan: 30 });
   const result = store.settleDay({ date: '2026-09-24' });
   assert.equal(result.transfer.amount, 4829 - 3000);
@@ -323,4 +325,49 @@ test('最后一个三日批次可在计划截止日正常结算', () => {
   assert.equal(store.settleDay({ date: '2027-02-04' }).settlementDate, '2027-02-05');
   const result = store.settleDay({ date: '2027-02-05' });
   assert.equal(result.transfer.amount, CONFIG.dailyBudget * 3);
+});
+
+test('未实际划额时结算不能凭空退款', () => {
+  for (const mode of ['daily', 'three-day']) {
+    useMemoryStorage();
+    store.reset();
+    store.setMode(mode, '2026-09-24');
+    const result = store.settleDay({ date: mode === 'daily' ? '2026-09-24' : '2026-09-26' });
+    assert.equal(result.transfer, null);
+    assert.equal(balancesOf(result.state).BANK1, 0);
+    assert.equal(balancesOf(result.state).POOL2, 0);
+  }
+});
+
+test('三日批次封账后所有日期均禁止补记支出和重复划额', () => {
+  useMemoryStorage();
+  store.reset();
+  store.setMode('three-day', '2026-09-24');
+  store.allocateDay({ date: '2026-09-24' });
+  store.settleDay({ date: '2026-09-26' });
+  for (const date of ['2026-09-24', '2026-09-25', '2026-09-26']) {
+    assert.equal(store.addExpense({ date, category: 'meal', amountYuan: 10 }).blocked, 'closed');
+    assert.equal(store.allocateDay({ date }).blocked, 'closed');
+  }
+});
+
+test('切换模式后撤销封账和重结仍使用原三日批次', () => {
+  useMemoryStorage();
+  store.reset();
+  store.setMode('three-day', '2026-09-24');
+  store.allocateDay({ date: '2026-09-24' });
+  store.addExpense({ date: '2026-09-24', category: 'meal', amountYuan: 30 });
+  const first = store.settleDay({ date: '2026-09-26' });
+  assert.equal(first.transfer.amount, 13557);
+  store.setMode('daily', '2026-09-26');
+  const reopened = store.reopenDay('2026-09-25');
+  assert.equal(reopened.reversedRefund, 13557);
+  assert.equal(refundsOf(reopened.state).length, 0);
+  assert.equal(store.allocateDay({ date: '2026-09-25' }).alreadyAllocated, true);
+  store.addExpense({ date: '2026-09-25', category: 'meal', amountYuan: 20 });
+  assert.equal(store.settleDay({ date: '2026-09-25' }).batchPending, true);
+  const result = store.settleDay({ date: '2026-09-26' });
+  assert.equal(result.transfer.amount, 11557);
+  assert.equal(balancesOf(result.state).BANK1, 0);
+  assert.equal(balancesOf(result.state).POOL2, -5000);
 });
