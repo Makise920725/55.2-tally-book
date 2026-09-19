@@ -37,4 +37,12 @@ function previousWorkday(date) {
   return dateKey(cursor);
 }
 
-module.exports = { HOLIDAYS, MAKEUP_WORKDAYS, parseDate, dateKey, isPayableWorkday, countPayableWorkdays, previousWorkday };
+// 本地时区的 YYYY-MM-DD；不能用 toISOString()，否则 UTC+8 早上 8 点前会写成昨天。
+function todayKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+module.exports = { HOLIDAYS, MAKEUP_WORKDAYS, parseDate, dateKey, todayKey, isPayableWorkday, countPayableWorkdays, previousWorkday };

@@ -61,11 +61,18 @@ function derivePeriods({ dailyBudget = CONFIG.dailyBudget } = {}) {
   });
 }
 
+// 计划区间之外（未开始 / 已结束）返回 null，避免把任意日期都当成第 1 期。
 function periodForDate(date, periods = derivePeriods()) {
-  return periods.find(item => date >= item.rangeStart && date <= item.rangeEnd) || periods[0];
+  return periods.find(item => date >= item.rangeStart && date <= item.rangeEnd) || null;
 }
 
 function isPlanStarted(date, startDate = CONFIG.startDate) { return date >= startDate; }
+
+function isPlanEnded(date, deadline = CONFIG.deadline) { return date > deadline; }
+
+function isPlanActive(date, startDate = CONFIG.startDate, deadline = CONFIG.deadline) {
+  return date >= startDate && date <= deadline;
+}
 
 function daysFrom(start, date) {
   const [sy, sm, sd] = start.split('-').map(Number);
@@ -77,4 +84,4 @@ function createInitialState() {
   return { version: 1, schemaVersion: 4, config: { ...CONFIG, scenario: '中' }, periods: derivePeriods(), mode: 'daily', categories: DEFAULT_CATEGORIES, openingBalances: { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 }, daySlots: {}, paydaySteps: {}, executedPaydays: {}, ledger: { expenses: [], transfers: [], specials: [], adjusts: [] } };
 }
 
-module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, SCENARIOS, allocationForMode, progressToTarget, daysUntil, derivePeriods, periodForDate, isPlanStarted, daysFrom, createInitialState };
+module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, SCENARIOS, allocationForMode, progressToTarget, daysUntil, derivePeriods, periodForDate, isPlanStarted, isPlanEnded, isPlanActive, daysFrom, createInitialState };

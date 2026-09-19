@@ -4,25 +4,32 @@ function sum(items, predicate = () => true) {
   return items.filter(predicate).reduce((total, item) => total + item.amount, 0);
 }
 
-function accountBalances(transfers, expenses, opening = {}, specials = []) {
+function accountBalances(transfers, expenses, opening = {}, specials = [], adjusts = []) {
   const balances = { [ACCT.BANK1]: opening[ACCT.BANK1] || 0, [ACCT.POOL2]: opening[ACCT.POOL2] || 0, [ACCT.POCKET3]: opening[ACCT.POCKET3] || 0, [ACCT.BILL]: opening[ACCT.BILL] || 0, [ACCT.OUT]: opening[ACCT.OUT] || 0 };
   transfers.forEach(({ from, to, amount }) => { balances[from] -= amount; balances[to] += amount; });
   expenses.forEach(({ account = ACCT.BANK1, amount }) => { balances[account] -= amount; balances[ACCT.OUT] += amount; });
   specials.forEach(({ from = ACCT.POCKET3, amount }) => { balances[from] -= amount; balances[ACCT.OUT] += amount; });
+  adjusts.forEach(({ acct, diff }) => {
+    if (Object.prototype.hasOwnProperty.call(balances, acct) && Number.isInteger(diff)) balances[acct] += diff;
+  });
   return balances;
 }
 
 function dailySpent(expenses, date) { return sum(expenses, item => item.date === date); }
 function remainingDailyBudget(expenses, date, dailyBudget) { return dailyBudget - dailySpent(expenses, date); }
 
-function dailySeries(expenses, start, days, limit = 7000) {
+function dailySeries(expenses, start, days, { limit, budget } = {}) {
+  const spentByDate = new Map();
+  expenses.forEach(item => spentByDate.set(item.date, (spentByDate.get(item.date) || 0) + item.amount));
   const [year, month, day] = start.split('-').map(Number);
   const cursor = new Date(Date.UTC(year, month - 1, day));
-  return Array.from({ length: days }, (_, index) => {
+  const dailyBudget = Number.isInteger(budget) ? budget : 0;
+  const scaleLimit = Number.isInteger(limit) && limit > 0 ? limit : Math.max(dailyBudget * 1.5, 7000);
+  return Array.from({ length: days }, () => {
     const date = cursor.toISOString().slice(0, 10);
-    const spent = dailySpent(expenses, date);
+    const spent = spentByDate.get(date) || 0;
     cursor.setUTCDate(cursor.getUTCDate() + 1);
-    return { date, label: date.slice(5).replace('-', '/'), spent, height: Math.max(3, Math.min(100, (spent / limit) * 100)), used: spent > 0, over: spent > 5519 };
+    return { date, label: date.slice(5).replace('-', '/'), spent, height: Math.max(3, Math.min(100, (spent / scaleLimit) * 100)), used: spent > 0, over: spent > dailyBudget };
   });
 }
 
