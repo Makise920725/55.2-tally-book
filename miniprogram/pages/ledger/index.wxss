@@ -1,0 +1,37 @@
+.ledger-count { font-family: "Noto Serif SC", "Songti SC", serif; font-size: 40rpx; }
+.ledger-num { font-size: 48rpx; }
+.ledger-totals { display: flex; flex-wrap: wrap; margin-top: 18rpx; }
+.ledger-total { display: flex; justify-content: space-between; width: 50%; padding: 12rpx 0; font-size: 23rpx; }
+.ledger-total-label { color: var(--dim); }
+.ledger-total-value { font-family: "Noto Serif SC", "Songti SC", serif; font-variant-numeric: tabular-nums; }
+.date-row { display: flex; gap: 14rpx; }
+.date-field { padding: 20rpx 22rpx; border: 1rpx solid var(--line); border-radius: 18rpx; background: var(--paper); color: var(--ink-2); font-size: 23rpx; }
+.search-row { display: flex; align-items: center; gap: 16rpx; }
+.search-input { flex: 1; }
+.search-clear { color: var(--dim); font-size: 22rpx; }
+.flow-hint { margin-top: 6rpx; color: var(--faint); font-size: 20rpx; }
+.detail-card { margin: 6rpx 0 18rpx; padding: 8rpx 20rpx; border: 1rpx solid var(--line); border-radius: 18rpx; background: var(--paper); }
+.detail-card .list-row { border-bottom-color: var(--line); }
+.detail-value { max-width: 62%; text-align: right; font-size: 23rpx; word-break: break-all; }
+.load-more { text-align: center; }
+.struck { color: var(--faint); }
+.struck-tag { border-style: dashed; }
+.reverse-button { margin-top: 20rpx; }
+.reverse-hint { margin-top: 16rpx; }
+
+.flow-check { width: 34rpx; height: 34rpx; margin-right: 14rpx; border: 1rpx solid var(--rule); border-radius: 10rpx; color: #fff; font-size: 22rpx; line-height: 32rpx; text-align: center; }
+.flow-check.on { border-color: var(--ink); background: var(--ink); }
+.flow-check.off { opacity: .35; }
+.flow-row.checked { background: var(--paper); border-radius: 16rpx; }
+.page.batching { padding-bottom: 260rpx; }
+.batch-bar { position: fixed; z-index: 12; right: 32rpx; bottom: calc(28rpx + env(safe-area-inset-bottom)); left: 32rpx; display: flex; align-items: center; justify-content: space-between; gap: 18rpx; padding: 24rpx 28rpx; border: 1rpx solid var(--rule); border-radius: 24rpx; background: var(--card); box-shadow: 0 8rpx 28rpx rgba(23, 23, 23, .08); }
+.batch-copy { flex: 1; font-size: 24rpx; }
+.batch-hint { margin-top: 6rpx; font-size: 21rpx; }
+.batch-actions { display: flex; align-items: center; gap: 12rpx; }
+.batch-ok { width: auto; padding: 18rpx 26rpx; font-size: 24rpx; }
+.batch-ok.disabled { background: var(--rule); color: var(--card); }
+.detail-actions { margin-top: 20rpx; }
+.partial-row { display: flex; align-items: center; gap: 12rpx; margin-top: 14rpx; }
+.partial-input { flex: 1; padding: 18rpx 22rpx; font-size: 23rpx; }
+.partial-ok { width: auto; margin: 0; padding: 16rpx 22rpx; font-size: 22rpx; }
+.reverse-button { margin-top: 20rpx; }

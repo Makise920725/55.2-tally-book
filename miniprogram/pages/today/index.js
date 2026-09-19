@@ -1,11 +1,12 @@
 const { CONFIG, daysUntil, isPlanStarted, isPlanEnded, isPlanActive } = require('../../domain/plan');
 const { todayKey } = require('../../domain/calendar');
+const { ACCT, remainingDailyBudget } = require('../../domain/ledger');
+const { buildLedgerEvents, summarizeEvents } = require('../../domain/ledger-view');
 const { formatFen } = require('../../domain/money');
-const { dailySpent, remainingDailyBudget } = require('../../domain/ledger');
 const store = require('../../store/store');
 
 Page({
-  data: { dailyBudget: formatFen(CONFIG.dailyBudget), remaining: formatFen(CONFIG.dailyBudget), deadline: CONFIG.deadline, amount: '', keypadAmount: '0', selectedCategory: 'meal', selectedCategoryName: '吃饭', categories: [], entries: [], keyRows: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'delete'], keyboardVisible: false, closed: false, started: false, ended: false, active: false, daysToStart: 0, persisted: true },
+  data: { dailyBudget: formatFen(CONFIG.dailyBudget), remaining: formatFen(CONFIG.dailyBudget), deadline: CONFIG.deadline, amount: '', keypadAmount: '0', selectedCategory: 'meal', selectedCategoryName: '吃饭', categories: [], entries: [], summary: null, keyRows: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'delete'], keyboardVisible: false, closed: false, started: false, ended: false, active: false, daysToStart: 0, persisted: true },
   onLoad() {
     this.unsubscribe = store.subscribe(() => this.refresh());
     this.refresh();
@@ -19,10 +20,20 @@ Page({
     const started = isPlanStarted(today, state.config.startDate);
     const ended = isPlanEnded(today, state.config.deadline);
     const active = isPlanActive(today, state.config.startDate, state.config.deadline);
-    const names = {}; state.categories.forEach(item => { names[item.id] = item.name; });
-    const entries = state.ledger.expenses.filter(item => item.date === today).slice().reverse().map(item => ({ ...item, categoryName: names[item.category] || item.category, amountText: formatFen(item.amount) }));
+    // 统一流水投影：额度划入 / 超支补差 / 日结退款必须和普通支出同等可见（视角是工资卡），
+    // 但“今天还能花”仍然只看普通支出，划转金额不参与消费计算。
+    const entries = buildLedgerEvents(state, { startDate: today, endDate: today, perspective: ACCT.BANK1 });
+    const totals = summarizeEvents(entries);
+    const summary = {
+      expense: formatFen(totals.expenseFen), transferIn: formatFen(totals.byKind.daily_alloc || 0),
+      cover: formatFen(totals.byKind.overspend_cover || 0), refund: formatFen(totals.byKind.daily_refund || 0),
+      special: formatFen(totals.specialFen),
+      // 校准是差额，可正可负；0 时整枚 chip 隐藏。
+      adjust: totals.adjustFen ? `${totals.adjustFen < 0 ? '−' : '+'}¥${formatFen(Math.abs(totals.adjustFen))}` : '',
+      count: totals.count
+    };
     const left = remainingDailyBudget(state.ledger.expenses, today, state.config.dailyBudget);
-    this.setData({ dailyBudget: formatFen(state.config.dailyBudget), remaining: formatFen(left), deadline: state.config.deadline, categories: state.categories, entries, closed: !!(state.daySlots[today] && state.daySlots[today].closed), started, ended, active, daysToStart: Math.max(0, daysUntil(state.config.startDate)) });
+    this.setData({ dailyBudget: formatFen(state.config.dailyBudget), remaining: formatFen(left), deadline: state.config.deadline, categories: state.categories, entries, summary, closed: !!(state.daySlots[today] && state.daySlots[today].closed), started, ended, active, daysToStart: Math.max(0, daysUntil(state.config.startDate)) });
   },
   selectCategory(event) { this.setData({ selectedCategory: event.currentTarget.dataset.category, selectedCategoryName: event.currentTarget.dataset.name, keyboardVisible: true }); },
   openKeyboard() { this.setData({ keyboardVisible: true }); },
@@ -72,6 +83,7 @@ Page({
       : `已划入 ¥${formatFen(result.transfer.amount)}`;
     wx.showToast({ title, icon: 'none' });
   },
+  openLedger() { wx.navigateTo({ url: `/pages/ledger/index?date=${todayKey()}&range=day` }); },
   reopenDay() {
     const result = store.reopenDay(todayKey());
     wx.showToast({ title: result.reversedRefund ? `已撤销封账，退回的 ¥${formatFen(result.reversedRefund)} 也已撤销` : '已撤销封账', icon: 'none' });

@@ -40,6 +40,22 @@ function createExpense({ id, date, category, amount, note = '' }) {
   return { id, date, category, amount, note, account: ACCT.BANK1, createdAt: new Date().toISOString() };
 }
 
+// 冲正记录：追加式负向支出，只用于更正误记的原始支出。原记录保持不动，
+// 余额派生（accountBalances）里两笔自动抵消，因此不需要重写历史批次。
+function createExpenseReversal({ id, date, category, amount, reversalOf, note = '', account = ACCT.BANK1 }) {
+  if (!id || !date || !category || !reversalOf) throw new TypeError('reversal requires id, date, category and reversalOf');
+  if (!Number.isInteger(amount) || amount <= 0) throw new TypeError('reversal requires the positive amount of the original expense');
+  return { id, date, category, amount: -amount, note, account, reversalOf, createdAt: new Date().toISOString() };
+}
+
+// 专项冲正：小荷包的计划内支出记错了，同样只追加负向记录；
+// 专项不参与批次额度核算，所以不需要补退。
+function createSpecialReversal({ id, date, reason, amount, reversalOf, note = '', from = ACCT.POCKET3 }) {
+  if (!id || !date || !reason || !reversalOf) throw new TypeError('special reversal requires id, date, reason and reversalOf');
+  if (!Number.isInteger(amount) || amount <= 0) throw new TypeError('special reversal requires the positive amount of the original special');
+  return { id, date, reason, amount: -amount, note, from, to: ACCT.OUT, reversalOf, createdAt: new Date().toISOString() };
+}
+
 function createTransfer({ id, date, from, to, amount, kind }) {
   if (!id || !date || !from || !to || !Number.isInteger(amount) || amount <= 0 || !kind) {
     throw new TypeError('transfer requires id, date, accounts, kind and positive integer amount');
@@ -52,4 +68,4 @@ function createSpecial({ id, date, reason, amount, note = '' }) {
   return { id, date, reason, amount, note, from: ACCT.POCKET3, to: ACCT.OUT, createdAt: new Date().toISOString() };
 }
 
-module.exports = { ACCT, sum, accountBalances, dailySpent, remainingDailyBudget, dailySeries, createExpense, createTransfer, createSpecial };
+module.exports = { ACCT, sum, accountBalances, dailySpent, remainingDailyBudget, dailySeries, createExpense, createExpenseReversal, createSpecial, createSpecialReversal, createTransfer };

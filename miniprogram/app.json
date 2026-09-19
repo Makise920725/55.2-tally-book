@@ -4,7 +4,8 @@
     "pages/period/index",
     "pages/pocket/index",
     "pages/payday/index",
-    "pages/me/index"
+    "pages/me/index",
+    "pages/ledger/index"
   ],
   "window": {
     "navigationBarTitleText": "55块2",

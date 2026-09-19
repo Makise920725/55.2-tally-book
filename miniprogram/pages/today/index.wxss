@@ -6,8 +6,6 @@
 .category.selected .category-mark { color: #fff; }
 .amount-input { margin: 26rpx 0; padding: 24rpx; border: 1rpx solid var(--line); border-radius: 20rpx; background: var(--paper); }
 .settle { margin-bottom: 24rpx; }
-.entry { display: flex; justify-content: space-between; padding: 20rpx 0; border-bottom: 1rpx solid var(--line); font-size: 25rpx; }
-.entry:last-child { border-bottom: 0; }
 .amount-preview { display: block; font-family: "Noto Serif SC", "Songti SC", serif; font-size: 42rpx; }
 .amount-hint { display: block; margin-top: 6rpx; color: var(--dim); font-size: 22rpx; }
 .keypad-mask { position: fixed; z-index: 20; inset: 0; display: flex; align-items: flex-end; background: rgba(23, 23, 23, .28); }
@@ -19,3 +17,4 @@
 .keypad-ok { margin-top: 16rpx; }
 .keypad-cancel { padding: 22rpx 0 0; color: var(--dim); text-align: center; font-size: 24rpx; }
 .prestart { padding: 48rpx 32rpx; text-align: center; }
+.flow-more { margin-top: 24rpx; }

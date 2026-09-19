@@ -1,4 +1,6 @@
 const STORAGE_KEY = 'p5519';
+const ROLLBACK_KEY = 'p5519.rollback';   // 恢复前自动留下的旧账本，用于一键撤销
+const META_KEY = 'p5519.meta';           // 最近备份/恢复时间等杂项
 const SCHEMA_VERSION = 4;
 
 function seed() { return require('../domain/plan').createInitialState(); }
@@ -17,7 +19,8 @@ function migrate(state) {
   next.daySlots = next.daySlots || {};
   next.paydaySteps = next.paydaySteps || {};
   next.executedPaydays = next.executedPaydays || {};
-  next.periods = next.periods || derivePeriods({ dailyBudget: next.config.dailyBudget });
+  // 空数组同样是“没有期次”：恢复一份 periods 为 [] 的备份会让所有页面失去期次依据。
+  if (!next.periods || !next.periods.length) next.periods = derivePeriods({ dailyBudget: next.config.dailyBudget });
   // 期次是派生数据：日额度变了（例如换了预算情景）而缓存的期次没跟着重算，会退错钱、算错目标。
   if (next.periods.some(item => item.budgetToPool !== item.days * next.config.dailyBudget)) {
     next.periods = derivePeriods({ dailyBudget: next.config.dailyBudget });
@@ -40,6 +43,30 @@ function persist(state) {
   catch (error) { return { ok: false, error }; }
 }
 
+function readKey(key) {
+  try {
+    const raw = wx.getStorageSync(key);
+    if (!raw) return null;
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (error) { return null; }
+}
+
+function writeKey(key, value) {
+  try { wx.setStorageSync(key, JSON.stringify(value)); return { ok: true }; }
+  catch (error) { return { ok: false, error }; }
+}
+
+// 备份/恢复的元信息与可撤销快照单独存放，不混进账本本体，免得污染派生逻辑。
+function readMeta() { return readKey(META_KEY) || {}; }
+function writeMeta(patch) { return writeKey(META_KEY, { ...readMeta(), ...patch }); }
+function saveRollback(state) { return writeKey(ROLLBACK_KEY, { savedAt: new Date().toISOString(), state }); }
+function readRollback() {
+  const slot = readKey(ROLLBACK_KEY);
+  if (!slot || !slot.state) return null;
+  return { savedAt: slot.savedAt, state: migrate(slot.state) };
+}
+function clearRollback() { try { wx.removeStorageSync(ROLLBACK_KEY); return { ok: true }; } catch (error) { return { ok: false, error }; } }
+
 function clear() { try { wx.removeStorageSync(STORAGE_KEY); } catch (error) { /* best effort */ } }
 
-module.exports = { STORAGE_KEY, SCHEMA_VERSION, seed, migrate, load, persist, clear };
+module.exports = { STORAGE_KEY, ROLLBACK_KEY, META_KEY, SCHEMA_VERSION, seed, migrate, load, persist, clear, readMeta, writeMeta, saveRollback, readRollback, clearRollback };

@@ -42,10 +42,11 @@ test('旧 storage 可以迁移到当前 schema', () => {
   assert.equal(state.categories.length, 8);
 });
 
-test('账本可以导出为带 BOM 的 CSV', () => {
-  const csv = exportLedgerCsv({ categories: [{ id: 'meal', name: '吃饭' }], ledger: { expenses: [{ date: '2026-09-12', category: 'meal', amount: 1500, note: '午饭,面' }], transfers: [], adjusts: [] } });
-  assert.ok(csv.startsWith('\ufeff日期,类型'));
+test('账本可以导出为带 BOM 的统一流水 CSV', () => {
+  const csv = exportLedgerCsv({ categories: [{ id: 'meal', name: '吃饭' }], ledger: { expenses: [{ id: 'e1', date: '2026-09-12', category: 'meal', amount: 1500, note: '午饭,面' }], transfers: [], specials: [], adjusts: [] } });
+  assert.ok(csv.startsWith('\ufeff流水ID,业务日期,创建时间,时间是否精确,类型,明细,金额,方向,从账户,到账户,关联账户,备注'));
   assert.match(csv, /"午饭,面"/);
+  assert.match(csv, /^e1,2026-09-12,,否,支出,吃饭,15\.00,支出,工资卡,支出,工资卡,"午饭,面"$/m);
 });
 
 test('三天一结的单次额度按三日计算', () => {

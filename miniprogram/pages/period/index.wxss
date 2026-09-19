@@ -1,7 +1,17 @@
 .period-card { padding-top: 12rpx; }
 .section-label { margin: 34rpx 0 18rpx; color: var(--dim); font-size: 22rpx; letter-spacing: 2rpx; }
-.daily-bars { display: flex; align-items: flex-end; gap: 4rpx; height: 170rpx; margin: 30rpx 0 18rpx; overflow: hidden; }
-.daily-bar-wrap { display: flex; align-items: flex-end; height: 100%; flex: 1; }
+.daily-bars-scroll { width: 100%; margin: 30rpx 0 18rpx; white-space: nowrap; }
+.daily-bars { display: flex; align-items: flex-end; gap: 4rpx; height: 190rpx; }
+.daily-bar-wrap { display: flex; flex: 1 0 34rpx; flex-direction: column; align-items: stretch; justify-content: flex-end; height: 100%; padding: 12rpx 4rpx 0; }
+.daily-bar-wrap.active { background: var(--paper); border-radius: 10rpx 10rpx 0 0; }
 .daily-bar { width: 100%; min-height: 4rpx; border-radius: 6rpx 6rpx 0 0; background: var(--rule); }
 .daily-bar.used { background: var(--ink); }
 .daily-bar.over { background: repeating-linear-gradient(135deg, var(--ink-2) 0 6rpx, var(--paper) 6rpx 12rpx); }
+.daily-dot { width: 8rpx; height: 8rpx; margin: 10rpx auto 0; border-radius: 50%; background: transparent; }
+.daily-dot.alloc { background: var(--faint); }
+.daily-dot.cover { background: var(--ink); }
+.daily-dot.refund { border: 1rpx solid var(--ink-2); background: transparent; }
+.group-label { margin: 26rpx 0 6rpx; color: var(--dim); font-size: 22rpx; letter-spacing: 1rpx; }
+.day-empty { margin: 12rpx 0 4rpx; }
+.struck { color: var(--faint); }
+.struck-tag { border-style: dashed; margin-left: 8rpx; }
