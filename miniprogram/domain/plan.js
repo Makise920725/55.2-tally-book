@@ -61,8 +61,9 @@ function derivePeriods({ dailyBudget = CONFIG.dailyBudget } = {}) {
   });
 }
 
+// 计划区间之外（未开始 / 已结束）返回 null，避免把任意日期都当成第 1 期。
 function periodForDate(date, periods = derivePeriods()) {
-  return periods.find(item => date >= item.rangeStart && date <= item.rangeEnd) || periods[0];
+  return periods.find(item => date >= item.rangeStart && date <= item.rangeEnd) || null;
 }
 
 function isPlanStarted(date, startDate = CONFIG.startDate) { return date >= startDate; }

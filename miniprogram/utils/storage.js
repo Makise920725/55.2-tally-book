@@ -18,6 +18,10 @@ function migrate(state) {
   next.paydaySteps = next.paydaySteps || {};
   next.executedPaydays = next.executedPaydays || {};
   next.periods = next.periods || derivePeriods({ dailyBudget: next.config.dailyBudget });
+  // 期次是派生数据：日额度变了（例如换了预算情景）而缓存的期次没跟着重算，会退错钱、算错目标。
+  if (next.periods.some(item => item.budgetToPool !== item.days * next.config.dailyBudget)) {
+    next.periods = derivePeriods({ dailyBudget: next.config.dailyBudget });
+  }
   next.mode = next.mode || 'daily';
   next.openingBalances = next.openingBalances || { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 };
   next.schemaVersion = SCHEMA_VERSION;

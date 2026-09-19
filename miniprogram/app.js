@@ -1,4 +1,5 @@
 const { getState } = require('./store/store');
+const { todayKey } = require('./domain/calendar');
 
 App({
   globalData: {
@@ -6,10 +7,12 @@ App({
   },
   onLaunch() { getState(); },
   onShow() {
+    this.refreshBadge();
+  },
+  refreshBadge() {
     const state = getState();
-    const today = new Date();
-    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    if (state.config.startDate <= date && !(state.daySlots[date] && state.daySlots[date].closed)) wx.setTabBarBadge({ index: 0, text: '1' });
-    else wx.removeTabBarBadge({ index: 0 });
+    const date = todayKey();
+    if (state.config.startDate <= date && !(state.daySlots[date] && state.daySlots[date].closed)) wx.setTabBarBadge({ index: 0, text: '1', fail: () => {} });
+    else wx.removeTabBarBadge({ index: 0, fail: () => {} });
   }
 });
