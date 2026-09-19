@@ -4,11 +4,14 @@ function sum(items, predicate = () => true) {
   return items.filter(predicate).reduce((total, item) => total + item.amount, 0);
 }
 
-function accountBalances(transfers, expenses, opening = {}, specials = []) {
+function accountBalances(transfers, expenses, opening = {}, specials = [], adjusts = []) {
   const balances = { [ACCT.BANK1]: opening[ACCT.BANK1] || 0, [ACCT.POOL2]: opening[ACCT.POOL2] || 0, [ACCT.POCKET3]: opening[ACCT.POCKET3] || 0, [ACCT.BILL]: opening[ACCT.BILL] || 0, [ACCT.OUT]: opening[ACCT.OUT] || 0 };
   transfers.forEach(({ from, to, amount }) => { balances[from] -= amount; balances[to] += amount; });
   expenses.forEach(({ account = ACCT.BANK1, amount }) => { balances[account] -= amount; balances[ACCT.OUT] += amount; });
   specials.forEach(({ from = ACCT.POCKET3, amount }) => { balances[from] -= amount; balances[ACCT.OUT] += amount; });
+  adjusts.forEach(({ acct, diff }) => {
+    if (Object.prototype.hasOwnProperty.call(balances, acct) && Number.isInteger(diff)) balances[acct] += diff;
+  });
   return balances;
 }
 

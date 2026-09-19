@@ -47,7 +47,16 @@ Page({
     wx.showToast({ title: executed.length ? `已切换到 ${scenario}：已执行期次的流水不会改写` : `已切换到 ${scenario} 情景`, icon: 'none' });
   },
   selectAcct(event) { this.setData({ acctIndex: Number(event.detail.value) }, () => this.refresh()); },
-  toggleMode() { store.setMode(this.data.mode === 'daily' ? 'three-day' : 'daily'); },
+  toggleMode(event) {
+    const mode = event.detail.value ? 'three-day' : 'daily';
+    const result = store.setMode(mode, todayKey());
+    if (!result.blocked) return;
+    this.refresh();
+    const title = result.blocked === 'batch_boundary'
+      ? '请在新三日批次首日切换'
+      : `当前批次未结算，请于 ${result.settlementDate} 结算后切换`;
+    wx.showToast({ title, icon: 'none' });
+  },
   inputReal(event) { this.setData({ realBalance: event.detail.value }); },
   inputBook(event) { this.setData({ bookBalance: event.detail.value }); },
   inputNote(event) { this.setData({ adjustNote: event.detail.value }); },

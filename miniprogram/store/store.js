@@ -22,8 +22,16 @@ function commit(next) {
   return { state, persisted: result.ok };
 }
 
+function planOperationBlock(current, date) {
+  if (date < current.config.startDate) return 'not_started';
+  if (date > current.config.deadline) return 'ended';
+  return null;
+}
+
 function addExpense({ date, category, amountYuan, note = '' }) {
   const current = getState();
+  const planBlock = planOperationBlock(current, date);
+  if (planBlock) return { state: current, persisted: true, blocked: planBlock };
   if (current.daySlots && current.daySlots[date] && current.daySlots[date].closed) {
     return { state: current, persisted: true, blocked: 'closed' };
   }
@@ -50,6 +58,8 @@ function batchRange(date, mode) {
   start.setUTCDate(start.getUTCDate() + groupStart);
   const end = new Date(start.getTime());
   end.setUTCDate(end.getUTCDate() + 2);
+  const deadline = parseDate(CONFIG.deadline);
+  if (end > deadline) end.setTime(deadline.getTime());
   return { start: dateKey(start), end: dateKey(end) };
 }
 
@@ -68,9 +78,10 @@ function allocationOf(current, rangeStart, fallbackBudget) {
 
 function settleDay({ date, dailyBudget } = {}) {
   const current = getState();
+  // 计划区间外没有额度可退，否则会把整日预算凭空退回余额宝。
+  const planBlock = planOperationBlock(current, date);
+  if (planBlock) return { state: current, persisted: true, transfer: null, blocked: planBlock };
   if (current.daySlots && current.daySlots[date] && current.daySlots[date].closed) return { state: current, persisted: true, transfer: null, alreadyClosed: true };
-  // 计划开始日之前没有额度可退，否则会把整日预算凭空退回余额宝。
-  if (date < require('../domain/plan').CONFIG.startDate) return { state: current, persisted: true, transfer: null, blocked: 'not_started' };
   // 兜底必须用当前情景的每日额度，硬编码 CONFIG.dailyBudget 会在“省 / 松”情景下退错钱。
   const budget = Number.isInteger(dailyBudget) ? dailyBudget : current.config.dailyBudget;
   const slot = current.daySlots[date] || {};
@@ -125,9 +136,34 @@ function togglePaydayStep(periodIndex, step) {
   return commit({ ...current, paydaySteps });
 }
 
-function setMode(mode) {
+function batchHasActivity(current, start, end) {
+  const inRange = item => item.date >= start && item.date <= end;
+  return current.ledger.expenses.some(inRange)
+    || current.ledger.transfers.some(item => inRange(item) && ['daily_alloc', 'overspend_cover', 'daily_refund'].includes(item.kind));
+}
+
+function setMode(mode, asOfDate = todayKey()) {
   if (mode !== 'daily' && mode !== 'three-day') throw new TypeError('mode must be daily or three-day');
   const current = getState();
+  if (mode === current.mode) return { state: current, persisted: true, unchanged: true };
+  if (!planOperationBlock(current, asOfDate)) {
+    const currentBatch = batchRange(asOfDate, 'three-day');
+    if (current.mode === 'three-day') {
+      const closed = Object.keys(current.daySlots || {}).some(date => date >= currentBatch.start && date <= currentBatch.end && current.daySlots[date].closed);
+      if (batchHasActivity(current, currentBatch.start, currentBatch.end) && !closed) {
+        return { state: current, persisted: true, blocked: 'active_batch', settlementDate: currentBatch.end };
+      }
+    }
+    if (mode === 'three-day') {
+      const { daysFrom } = require('../domain/plan');
+      if (daysFrom(current.config.startDate, asOfDate) % 3 !== 0) {
+        return { state: current, persisted: true, blocked: 'batch_boundary' };
+      }
+      if (batchHasActivity(current, currentBatch.start, currentBatch.end)) {
+        return { state: current, persisted: true, blocked: 'active_batch', settlementDate: currentBatch.end };
+      }
+    }
+  }
   return commit({ ...current, mode });
 }
 
@@ -159,8 +195,10 @@ function executePayday(periodIndex = 1, asOfDate = todayKey()) {
 }
 
 function addSpecial({ date, reason, amountYuan, note = '' }) {
-  const special = createSpecial({ id: uid('special'), date, reason, amount: yuanToFen(amountYuan), note });
   const current = getState();
+  const planBlock = planOperationBlock(current, date);
+  if (planBlock) return { state: current, persisted: true, blocked: planBlock };
+  const special = createSpecial({ id: uid('special'), date, reason, amount: yuanToFen(amountYuan), note });
   return commit({ ...current, ledger: { ...current.ledger, specials: [...(current.ledger.specials || []), special] } });
 }
 
@@ -175,7 +213,8 @@ function setScenario(scenario) {
 function allocateDay({ date }) {
   const current = getState();
   const { CONFIG, daysFrom } = require('../domain/plan');
-  if (date < CONFIG.startDate) return { state: current, persisted: true, blocked: 'not_started' };
+  const planBlock = planOperationBlock(current, date);
+  if (planBlock) return { state: current, persisted: true, blocked: planBlock };
   // 已封账说明本批次已经结算清楚，再点一次会把额度重复划进工资卡。
   if (current.daySlots[date] && current.daySlots[date].closed) return { state: current, persisted: true, blocked: 'closed' };
   const dayNumber = daysFrom(CONFIG.startDate, date);

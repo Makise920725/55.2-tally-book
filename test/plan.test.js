@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { yuanToFen, formatFen } = require('../miniprogram/domain/money');
 const { countPayableWorkdays } = require('../miniprogram/domain/calendar');
-const { CONFIG, derivePeriods, allocationForMode, progressToTarget, daysUntil, periodForDate, isPlanStarted, daysFrom } = require('../miniprogram/domain/plan');
+const { CONFIG, derivePeriods, allocationForMode, progressToTarget, daysUntil, periodForDate, isPlanStarted, isPlanActive, daysFrom } = require('../miniprogram/domain/plan');
 const { createExpense, createTransfer, remainingDailyBudget, dailySeries, accountBalances, sum, ACCT } = require('../miniprogram/domain/ledger');
 const store = require('../miniprogram/store/store');
 const { migrate, SCHEMA_VERSION } = require('../miniprogram/utils/storage');
@@ -82,10 +82,10 @@ test('超支时只为新增超支额生成余额宝补差划转', () => {
     removeStorageSync: () => {}
   };
   store.reset();
-  store.addExpense({ date: '2026-09-12', category: 'meal', amountYuan: 60 });
+  store.addExpense({ date: '2026-09-24', category: 'meal', amountYuan: 60 });
   let transfers = store.getState().ledger.transfers.filter(item => item.kind === 'overspend_cover');
   assert.deepEqual(transfers.map(item => item.amount), [481]);
-  store.addExpense({ date: '2026-09-12', category: 'snack', amountYuan: 5 });
+  store.addExpense({ date: '2026-09-24', category: 'snack', amountYuan: 5 });
   transfers = store.getState().ledger.transfers.filter(item => item.kind === 'overspend_cover');
   assert.deepEqual(transfers.map(item => item.amount), [481, 500]);
 });
@@ -159,7 +159,7 @@ test('预算情景最终目标随日额度动态变化', () => {
   assert.equal(derivePeriods({ dailyBudget: 6373 }).at(-1).pocketAfter, 1083884);
 });
 
-const balancesOf = state => accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials);
+const balancesOf = state => accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials, state.ledger.adjusts);
 const refundsOf = state => state.ledger.transfers.filter(item => item.kind === 'daily_refund');
 const coverOf = state => state.ledger.transfers.filter(item => item.kind === 'overspend_cover');
 // 不变量：余额宝的余额 = 发薪日拨入的预算 −（已划入工资卡的额度 + 已补的超支），结算退款不得重复扣池子。
@@ -275,3 +275,52 @@ test('ICS 使用 CRLF 并带 UID/DTEND，可被系统日历接受', () => {
   assert.match(ics, /DTEND;VALUE=DATE:20260925/);
 });
 
+test('金额校准差额会参与账户余额派生', () => {
+  useMemoryStorage();
+  store.reset();
+  const result = store.addAdjust({ date: '2026-09-24', acct: ACCT.BANK1, realBalanceYuan: 100, bookBalanceYuan: 80 });
+  assert.equal(result.state.ledger.adjusts[0].diff, 2000);
+  assert.equal(balancesOf(result.state).BANK1, 2000);
+});
+
+test('计划截止日后禁止产生新的计划流水', () => {
+  useMemoryStorage();
+  store.reset();
+  assert.equal(store.addExpense({ date: '2026-09-23', category: 'meal', amountYuan: 1 }).blocked, 'not_started');
+  assert.equal(isPlanActive('2027-02-05'), true);
+  assert.equal(isPlanActive('2027-02-06'), false);
+  assert.equal(store.addExpense({ date: '2027-02-06', category: 'meal', amountYuan: 1 }).blocked, 'ended');
+  assert.equal(store.allocateDay({ date: '2027-02-06' }).blocked, 'ended');
+  assert.equal(store.settleDay({ date: '2027-02-06' }).blocked, 'ended');
+  assert.equal(store.addSpecial({ date: '2027-02-06', reason: '计划外', amountYuan: 1 }).blocked, 'ended');
+});
+
+test('有未结三日批次时不能切换结算模式', () => {
+  useMemoryStorage();
+  store.reset();
+  store.setMode('three-day', '2026-09-24');
+  store.allocateDay({ date: '2026-09-24' });
+  const blocked = store.setMode('daily', '2026-09-25');
+  assert.equal(blocked.blocked, 'active_batch');
+  assert.equal(blocked.settlementDate, '2026-09-26');
+  assert.equal(store.getState().mode, 'three-day');
+  store.settleDay({ date: '2026-09-26' });
+  assert.equal(store.setMode('daily', '2026-09-26').state.mode, 'daily');
+});
+
+test('每日模式只能在三日批次首日切换为三天一结', () => {
+  useMemoryStorage();
+  store.reset();
+  assert.equal(store.setMode('three-day', '2026-09-25').blocked, 'batch_boundary');
+  assert.equal(store.setMode('three-day', '2026-09-24').state.mode, 'three-day');
+});
+
+test('最后一个三日批次可在计划截止日正常结算', () => {
+  useMemoryStorage();
+  store.reset();
+  store.setMode('three-day', '2026-09-24');
+  store.allocateDay({ date: '2027-02-03' });
+  assert.equal(store.settleDay({ date: '2027-02-04' }).settlementDate, '2027-02-05');
+  const result = store.settleDay({ date: '2027-02-05' });
+  assert.equal(result.transfer.amount, CONFIG.dailyBudget * 3);
+});

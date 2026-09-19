@@ -2,8 +2,9 @@
   <view class="eyebrow">55块2 · 今日</view>
   <view class="title">今天还能花</view>
   <view wx:if="{{!started}}" class="card prestart"><view class="caption">计划尚未开始</view><view class="amount">还有 {{daysToStart}} 天</view><view class="caption">第一期工资到账日：2026-09-24</view></view>
-  <view class="card hero"><view class="caption">今天还能花</view><view class="amount">¥ {{remaining}}</view><view class="caption">额度 ¥{{dailyBudget}}　·　轻盈记录，按自己的节奏</view><view class="progress"><view class="progress-fill" style="width: {{remaining / dailyBudget * 100}}%;"></view></view></view>
-  <view wx:if="{{started}}" class="card">
+  <view wx:elif="{{ended}}" class="card prestart"><view class="caption">五期计划已结束</view><view class="amount">已完成</view><view class="caption">计划截止日：{{deadline}}，可在“储蓄”和“我的”中查看或导出记录。</view></view>
+  <view wx:if="{{active}}" class="card hero"><view class="caption">今天还能花</view><view class="amount">¥ {{remaining}}</view><view class="caption">额度 ¥{{dailyBudget}}　·　轻盈记录，按自己的节奏</view><view class="progress"><view class="progress-fill" style="width: {{remaining / dailyBudget * 100}}%;"></view></view></view>
+  <view wx:if="{{active}}" class="card">
     <view class="section-title">记一笔</view>
     <view class="categories"><button wx:for="{{categories}}" wx:key="id" class="category {{selectedCategory === item.id ? 'selected' : ''}}" data-category="{{item.id}}" data-name="{{item.name}}" bindtap="selectCategory"><text class="category-mark">{{item.mark}}</text><text>{{item.name}}</text></button></view>
     <view class="amount-input" bindtap="openKeyboard"><text class="amount-preview">¥ {{keypadAmount}}</text><text class="amount-hint">{{selectedCategoryName}}　·　点击输入金额</text></view>
@@ -14,8 +15,8 @@
     <view wx:if="{{entries.length === 0}}" class="muted">还没有记录</view>
     <view wx:for="{{entries}}" wx:key="id" class="entry"><text>{{item.categoryName}}</text><text>− ¥{{item.amountText}}</text></view>
   </view>
-  <button wx:if="{{started}}" class="button secondary settle" bindtap="allocateDay">早间划额　·　从余额宝转入工资卡</button>
-  <button wx:if="{{started && !closed}}" class="button secondary settle" bindtap="settleDay">晚间结算　·　退回余额宝</button>
-  <button wx:elif="{{started && closed}}" class="button secondary settle" bindtap="reopenDay">已封账　·　撤销一次</button>
+  <button wx:if="{{active}}" class="button secondary settle" bindtap="allocateDay">早间划额　·　从余额宝转入工资卡</button>
+  <button wx:if="{{active && !closed}}" class="button secondary settle" bindtap="settleDay">晚间结算　·　退回余额宝</button>
+  <button wx:elif="{{active && closed}}" class="button secondary settle" bindtap="reopenDay">已封账　·　撤销一次</button>
 </view>
 <view wx:if="{{keyboardVisible}}" class="keypad-mask" bindtap="closeKeyboard"><view class="keypad-sheet" catchtap="noop"><view class="keypad-label">{{selectedCategoryName}}</view><view class="keypad-value">¥ {{keypadAmount}}</view><view class="keypad"><button wx:for="{{keyRows}}" wx:key="*this" data-key="{{item}}" bindtap="keypress">{{item === 'delete' ? '⌫' : item}}</button></view><button class="button keypad-ok" bindtap="addExpense">完成</button><view class="keypad-cancel" bindtap="closeKeyboard">取消</view></view></view>

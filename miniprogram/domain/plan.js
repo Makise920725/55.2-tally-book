@@ -68,6 +68,12 @@ function periodForDate(date, periods = derivePeriods()) {
 
 function isPlanStarted(date, startDate = CONFIG.startDate) { return date >= startDate; }
 
+function isPlanEnded(date, deadline = CONFIG.deadline) { return date > deadline; }
+
+function isPlanActive(date, startDate = CONFIG.startDate, deadline = CONFIG.deadline) {
+  return date >= startDate && date <= deadline;
+}
+
 function daysFrom(start, date) {
   const [sy, sm, sd] = start.split('-').map(Number);
   const [dy, dm, dd] = date.split('-').map(Number);
@@ -78,4 +84,4 @@ function createInitialState() {
   return { version: 1, schemaVersion: 4, config: { ...CONFIG, scenario: '中' }, periods: derivePeriods(), mode: 'daily', categories: DEFAULT_CATEGORIES, openingBalances: { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 }, daySlots: {}, paydaySteps: {}, executedPaydays: {}, ledger: { expenses: [], transfers: [], specials: [], adjusts: [] } };
 }
 
-module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, SCENARIOS, allocationForMode, progressToTarget, daysUntil, derivePeriods, periodForDate, isPlanStarted, daysFrom, createInitialState };
+module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, SCENARIOS, allocationForMode, progressToTarget, daysUntil, derivePeriods, periodForDate, isPlanStarted, isPlanEnded, isPlanActive, daysFrom, createInitialState };
