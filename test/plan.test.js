@@ -114,11 +114,22 @@ test('发薪执行和专项支出会写入可追溯流水', () => {
   assert.equal(store.getState().ledger.specials[0].amount, 40588);
 });
 
-test('预算情景切换会重算每日额度和五期预算', () => {
-  store.setScenario('省');
+test('预算情景切换：未执行期次重算，已执行期次以流水为准', () => {
+  global.wx = { getStorageSync: () => null, setStorageSync: () => {}, removeStorageSync: () => {} };
+  store.reset();
+  store.executePayday(1, '2026-09-24');
+  const executedBudget = store.getState().periods[0].budgetToPool;
+  const executedSave = store.getState().periods[0].saveToPocket;
+  store.setScenario('省', '2026-10-23');
   assert.equal(store.getState().config.dailyBudget, 4829);
-  assert.equal(store.getState().periods[0].budgetToPool, 4829 * 29);
-  store.setScenario('中');
+  // 第 1 期已经真实转账：预算与转存金额停在流水上，切情景不得追溯改写
+  assert.equal(store.getState().periods[0].executed, true);
+  assert.equal(store.getState().periods[0].budgetToPool, executedBudget);
+  assert.equal(store.getState().periods[0].saveToPocket, executedSave);
+  // 第 2 期尚未执行：按新情景重算
+  assert.equal(store.getState().periods[1].budgetToPool, 4829 * 33);
+  store.setScenario('中', '2026-10-23');
+  assert.equal(store.getState().periods[1].budgetToPool, 5519 * 33);
 });
 
 test('旧数据迁移会补回计划开始日', () => {
@@ -172,13 +183,13 @@ const useMemoryStorage = () => { global.wx = { getStorageSync: () => null, setSt
 test('“省”情景下晚间结算按当前日额度退款，而不是硬编码 55.19', () => {
   useMemoryStorage();
   store.reset();
-  store.setScenario('省');
+  store.setScenario('省', '2026-09-24');
   store.executePayday(1, '2026-09-24');
   store.allocateDay({ date: '2026-09-24' });
   store.addExpense({ date: '2026-09-24', category: 'meal', amountYuan: 30 });
   const result = store.settleDay({ date: '2026-09-24' });
   assert.equal(result.transfer.amount, 4829 - 3000);
-  store.setScenario('中');
+  store.setScenario('中', '2026-09-24');
 });
 
 test('撤销封账会先撤销该批次的退款，再结算不会重复退回余额宝', () => {

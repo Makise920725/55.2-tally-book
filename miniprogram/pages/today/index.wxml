@@ -31,7 +31,7 @@
     </view>
     <button class="button secondary flow-more" bindtap="openLedger">查看今日全部流水</button>
   </view>
-  <button wx:if="{{active}}" class="button secondary settle" bindtap="allocateDay">早间划额　·　从余额宝转入工资卡</button>
+  <button wx:if="{{active}}" class="button secondary settle" bindtap="allocateDay">早间划额　·　从余额宝转入工资卡（批次首日漏划可在本批任意一天补上）</button>
   <button wx:if="{{active && !closed}}" class="button secondary settle" bindtap="settleDay">晚间结算　·　退回余额宝</button>
   <button wx:elif="{{active && closed}}" class="button secondary settle" bindtap="reopenDay">已封账　·　撤销一次</button>
 </view>

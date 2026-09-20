@@ -1,7 +1,7 @@
 const { createExpense, createExpenseReversal, createTransfer, createSpecial, createSpecialReversal, ACCT } = require('../domain/ledger');
 const { yuanToFen } = require('../domain/money');
 const { parseDate, dateKey, todayKey } = require('../domain/calendar');
-const { allocationForMode } = require('../domain/plan');
+const { periodsForState, SCENARIOS } = require('../domain/plan');
 const storage = require('../utils/storage');
 
 let state = null;
@@ -22,6 +22,14 @@ function commit(next) {
   return { state, persisted: result.ok };
 }
 
+// 期次是派生数据：改情景、执行发薪日之后都必须按“当前情景 + 已执行流水”重算，
+// 已执行期次的金额以流水为准，所以重算不会追溯改写历史。目标储蓄额随之跟随真实轨迹。
+function refreshPeriods(next) {
+  const periods = periodsForState(next);
+  const last = periods[periods.length - 1];
+  return { ...next, periods, config: { ...next.config, targetSavings: last ? last.pocketAfter : next.config.targetSavings } };
+}
+
 function planOperationBlock(current, date) {
   if (date < current.config.startDate) return 'not_started';
   if (date > current.config.deadline) return 'ended';
@@ -40,14 +48,21 @@ function addExpense({ date, category, amountYuan, note = '' }) {
   const { start, end } = range;
   const beforeSpent = sumExpensesBetween(current.ledger.expenses, start, end);
   const afterSpent = beforeSpent + expense.amount;
-  const budget = allocationOf(current, start, current.config.dailyBudget);
+  const budget = allocationOf(current, range, current.config.dailyBudget);
   const beforeOver = Math.max(0, beforeSpent - budget);
   const afterOver = Math.max(0, afterSpent - budget);
   const transfers = [...current.ledger.transfers];
   if (afterOver > beforeOver) {
     transfers.push(createTransfer({ id: uid('cover'), date, from: ACCT.POOL2, to: ACCT.BANK1, amount: afterOver - beforeOver, kind: 'overspend_cover' }));
   }
-  return commit({ ...current, ledger: { ...current.ledger, expenses: [...current.ledger.expenses, expense], transfers } });
+  let daySlots = current.daySlots || {};
+  if (!hasAllocationRecord(current, start) && !Number.isInteger((daySlots[start] || {}).plannedBudget)) {
+    daySlots = { ...daySlots, [start]: { ...(daySlots[start] || {}), plannedBudget: budget } };
+  }
+  // coverFen / budgetFen 一并回传：页面要报的是“这一笔真实产生了多少补差”，
+  // 自己拿当前情景额度再估一遍，会在改过情景的那天说出没发生过的补差。
+  const result = commit({ ...current, daySlots, ledger: { ...current.ledger, expenses: [...current.ledger.expenses, expense], transfers } });
+  return { ...result, coverFen: Math.max(0, afterOver - beforeOver), budgetFen: budget };
 }
 
 // 三天一结时，一个批次的额度在第 1 天一次性划入，但要到第 3 天才整批结算。
@@ -68,21 +83,79 @@ function sumExpensesBetween(expenses, start, end) {
   return expenses.reduce((total, item) => (item.date >= start && item.date <= end ? total + item.amount : total), 0);
 }
 
-// 批次实际划入额：优先取当天真实存在的 daily_alloc 流水，其次取日槽记录，最后才回落到计划值。
-function allocationOf(current, rangeStart, fallbackBudget) {
-  const allocationTransfer = current.ledger.transfers.find(item => item.date === rangeStart && item.kind === 'daily_alloc');
+// 批次跨几个自然日：三日一批正常是 3 天，最后一个批次可能被计划截止日截短（只剩 1 天也照实算）。
+function batchDayCount(range) {
+  const { daysFrom } = require('../domain/plan');
+  return Math.max(1, daysFrom(range.start, range.end) + 1);
+}
+
+// 一个批次的计划额度：每日模式是 1 天额度，三天一结是“批次天数 × 日额度”。
+// 用批次天数而不是固定 3 倍，且沿用批次自己记录的模式，不能被当前模式带跑。
+function plannedBatchBudget(dailyBudget, mode, range) {
+  return mode === 'three-day' ? dailyBudget * batchDayCount(range) : dailyBudget;
+}
+
+// 批次实际划入额：优先取批次首日真实存在的 daily_alloc 流水，其次取日槽记录，最后才回落到计划值。
+function allocationOf(current, range, fallbackBudget) {
+  const { start, end } = range;
+  const mode = range.mode || current.mode;
+  const allocationTransfer = current.ledger.transfers.find(item => item.date === start && item.kind === 'daily_alloc');
   if (allocationTransfer) return allocationTransfer.amount;
-  const slot = (current.daySlots || {})[rangeStart];
+  const slot = (current.daySlots || {})[start];
   if (slot && Number.isInteger(slot.allocated)) return slot.allocated;
-  return allocationForMode(fallbackBudget, current.mode);
+  // 批次首日实际没划入时，阈值在“第一笔支出落地那一刻”钉住（plannedBudget），
+  // 否则事后改预算情景会把同一批次的补差阈值搬来搬去，越改越补得越多。
+  if (slot && Number.isInteger(slot.plannedBudget)) return slot.plannedBudget;
+  return plannedBatchBudget(fallbackBudget, mode, { start, end });
+}
+
+// 该批次是否已有真实划入依据（流水或日槽），用于决定要不要钉住计划额度。
+function hasAllocationRecord(current, rangeStart) {
+  const slot = (current.daySlots || {})[rangeStart] || {};
+  return current.ledger.transfers.some(item => item.date === rangeStart && item.kind === 'daily_alloc')
+    || Number.isInteger(slot.allocated);
+}
+
+function shiftDay(date, delta) {
+  const d = parseDate(date);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return dateKey(d);
+}
+
+// 一个日子已经归属的批次（没有批次身份时返回 null）。
+function slotIdentity(slots, key) {
+  const slot = slots[key] || {};
+  return slot.batchStart && slot.batchEnd ? { start: slot.batchStart, end: slot.batchEnd, mode: slot.batchMode } : null;
+}
+
+// 候选批次必须裁掉“已经归属别的批次”的日子：一天只属于一个批次，
+// 否则切换结算模式后再去动历史某天，会把已封账的批次并进新批次，
+// 同一笔退款被两套批次口径各算一次 → 余额宝被超退。
+function clipBatchRange(slots, grid, date) {
+  let start = grid.start;
+  let end = grid.end;
+  Object.keys(slots).forEach(key => {
+    const identity = slotIdentity(slots, key);
+    if (!identity) return;
+    if (identity.start === grid.start && identity.end === grid.end) return;
+    // 日期是 YYYY-MM-DD，按字符串比较即可（千万别用 Math.max，那会算出 NaN）
+    if (key < date) {
+      if (identity.end >= start && identity.start <= date) { const candidate = shiftDay(identity.end, 1); if (candidate > start) start = candidate; }
+    } else if (key > date) {
+      if (identity.start <= end && identity.end >= date) { const candidate = shiftDay(identity.start, -1); if (candidate < end) end = candidate; }
+    }
+  });
+  if (start > date) start = date;
+  if (end < date) end = date;
+  return { start, end };
 }
 
 function resolveBatchRange(current, date) {
   const slots = current.daySlots || {};
   const recorded = Object.values(slots).find(slot => slot && slot.batchStart && slot.batchEnd && date >= slot.batchStart && date <= slot.batchEnd);
   if (recorded) return { start: recorded.batchStart, end: recorded.batchEnd, mode: recorded.batchMode || current.mode };
-  const range = batchRange(date, current.mode);
-  return { ...range, mode: current.mode };
+  const grid = batchRange(date, current.mode);
+  return { ...clipBatchRange(slots, grid, date), mode: current.mode };
 }
 
 function batchIsClosed(current, range) {
@@ -95,7 +168,11 @@ function markBatchSlots(daySlots, range, values) {
   const end = parseDate(range.end);
   while (cursor <= end) {
     const key = dateKey(cursor);
-    next[key] = { ...(next[key] || {}), ...values, batchStart: range.start, batchEnd: range.end, batchMode: range.mode };
+    const existing = next[key] || {};
+    const identity = slotIdentity(next, key);
+    // 第二道防线：一天只属于一个批次，已登记的批次身份不会被后来的模式/批次改写
+    const conflict = identity && (identity.start !== range.start || identity.end !== range.end);
+    if (!conflict) next[key] = { ...existing, ...values, batchStart: range.start, batchEnd: range.end, batchMode: range.mode };
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return next;
@@ -121,7 +198,7 @@ function settleDay({ date, dailyBudget } = {}) {
   }
   // 余额宝已经为该批次补过的超支额，不能再当成“余粮”退回，否则池子会被扣两次；
   // 撤销封账后重复结算时，也要先扣掉本批次已登记的退款（含冲正补退），否则会重复退回余额宝。
-  const { allocated, covered, refunded: alreadyRefunded, due: amount } = batchNumbers(current, { start: expenseStart, end: expenseEnd }, budget);
+  const { allocated, covered, refunded: alreadyRefunded, due: amount } = batchNumbers(current, range, budget);
   if (!amount) {
     const daySlots = markBatchSlots(current.daySlots, range, { allocated, closed: true, refunded: alreadyRefunded });
     return { ...commit({ ...current, daySlots }), transfer: null, alreadyRefunded };
@@ -146,7 +223,7 @@ function sumTransfersInBatch(transfers, range, kind) {
 
 // 一个批次的结算口径：额度、实际支出（含冲正的负向金额）、已补差、已退款、应退余额。
 function batchNumbers(current, range, budget) {
-  const allocated = allocationOf(current, range.start, budget);
+  const allocated = allocationOf(current, range, budget);
   const spent = sumExpensesBetween(current.ledger.expenses, range.start, range.end);
   const covered = sumTransfersInBatch(current.ledger.transfers, range, 'overspend_cover');
   const refunded = sumTransfersInBatch(current.ledger.transfers, range, 'daily_refund');
@@ -241,7 +318,7 @@ function executePayday(periodIndex = 1, asOfDate = todayKey()) {
   ];
   const paydaySteps = { ...current.paydaySteps };
   for (let step = 1; step <= 5; step += 1) paydaySteps[`${periodIndex}-${step}`] = true;
-  return commit({ ...current, paydaySteps, executedPaydays: { ...current.executedPaydays, [periodIndex]: true }, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, ...transfers] } });
+  return commit(refreshPeriods({ ...current, paydaySteps, executedPaydays: { ...current.executedPaydays, [periodIndex]: true }, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, ...transfers] } }));
 }
 
 function addSpecial({ date, reason, amountYuan, note = '' }) {
@@ -252,30 +329,43 @@ function addSpecial({ date, reason, amountYuan, note = '' }) {
   return commit({ ...current, ledger: { ...current.ledger, specials: [...(current.ledger.specials || []), special] } });
 }
 
-function setScenario(scenario) {
-  const { SCENARIOS, derivePeriods } = require('../domain/plan');
+// 预算情景是“从今往后按多少花”的决定：
+// 已执行期次的四笔划转以流水为准（不会因切换情景而追溯改动），未执行期次按新日额度重算。
+function setScenario(scenario, asOfDate = todayKey()) {
   if (!Object.prototype.hasOwnProperty.call(SCENARIOS, scenario)) throw new TypeError('unknown scenario');
   const current = getState();
+  // 计划截止日后账本进入只读回顾态，情景属于计划参数，同样不许再改（否则会重写历史期次口径）。
+  if (planOperationBlock(current, asOfDate) === 'ended') return { state: current, persisted: true, blocked: 'ended' };
+  if (scenario === current.config.scenario) {
+    return { state: current, persisted: true, unchanged: true, frozen: [], replanned: [] };
+  }
   const dailyBudget = SCENARIOS[scenario];
-  return commit({ ...current, config: { ...current.config, dailyBudget, scenario }, periods: derivePeriods({ dailyBudget }) });
+  const next = refreshPeriods({ ...current, config: { ...current.config, dailyBudget, scenario } });
+  const frozen = next.periods.filter(item => item.executed).map(item => item.index);
+  const replanned = next.periods.filter(item => !item.executed).map(item => item.index);
+  return { ...commit(next), scenario, dailyBudget, frozen, replanned };
 }
 
+// 划额：一个批次只划一次，金额 = 批次天数 × 当前情景日额度。
+// 三天一结时若首日漏点，批次内后面任意一天都能“补划”：流水仍落在批次首日（业务日期），
+// createdAt 记录真实操作时刻。否则该批次永远划不进钱、settleDay 卡在 not_allocated 封不了账。
 function allocateDay({ date }) {
   const current = getState();
-  const { CONFIG, daysFrom } = require('../domain/plan');
   const planBlock = planOperationBlock(current, date);
   if (planBlock) return { state: current, persisted: true, blocked: planBlock };
   // 已封账说明本批次已经结算清楚，再点一次会把额度重复划进工资卡。
   const range = resolveBatchRange(current, date);
   if (batchIsClosed(current, range)) return { state: current, persisted: true, blocked: 'closed' };
-  const dayNumber = daysFrom(CONFIG.startDate, date);
-  const amount = allocationForMode(current.config.dailyBudget, current.mode) * (current.mode === 'three-day' ? (dayNumber % 3 === 0 ? 1 : 0) : 1);
-  if (!amount) return { state: current, persisted: true, skipped: true };
   const existing = current.ledger.transfers.some(item => item.date === range.start && item.kind === 'daily_alloc');
-  if (existing) return { state: current, persisted: true, alreadyAllocated: true };
-  const transfer = createTransfer({ id: uid('alloc'), date, from: ACCT.POOL2, to: ACCT.BANK1, amount, kind: 'daily_alloc' });
-  const daySlots = { ...current.daySlots, [date]: { ...(current.daySlots[date] || {}), allocated: amount, batchStart: range.start, batchEnd: range.end, batchMode: current.mode } };
-  return { ...commit({ ...current, daySlots, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }), transfer };
+  if (existing) return { state: current, persisted: true, alreadyAllocated: true, allocationDate: range.start };
+  const amount = plannedBatchBudget(current.config.dailyBudget, range.mode, range);
+  const transfer = createTransfer({ id: uid('alloc'), date: range.start, from: ACCT.POOL2, to: ACCT.BANK1, amount, kind: 'daily_alloc' });
+  // 日槽按整批登记：批次首日拿 allocated，其余各天至少记住自己属于哪个批次（含 batchMode）。
+  const daySlots = markBatchSlots(current.daySlots, range, { allocated: amount });
+  return {
+    ...commit({ ...current, daySlots, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }),
+    transfer, allocationDate: range.start, spanDays: batchDayCount(range), catchUp: range.start !== date
+  };
 }
 
 // ---- 冲正（追加式更正）：支出与专项共用一套 planner ----

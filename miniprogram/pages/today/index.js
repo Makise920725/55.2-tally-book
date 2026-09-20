@@ -63,23 +63,31 @@ Page({
       return;
     }
     this.setData({ amount: '', keypadAmount: '0', keyboardVisible: false, persisted: result.persisted });
-    const left = remainingDailyBudget(result.state.ledger.expenses, todayKey(), result.state.config.dailyBudget);
-    wx.showToast({ title: left < 0 ? `已记一笔，补差 ¥${formatFen(-left)}` : '已记一笔', icon: 'none' });
+    // 补差金额取 store 回传的真实值：批次额度以当天实际划入为准，改过预算情景也不会报错数字。
+    wx.showToast({ title: result.coverFen ? `已记一笔，补差 ¥${formatFen(result.coverFen)}` : '已记一笔', icon: 'none' });
   },
   settleDay() {
     if (!this.data.active) { wx.showToast({ title: this.data.ended ? `计划已于 ${CONFIG.deadline} 结束` : `计划将于 ${CONFIG.startDate} 开始`, icon: 'none' }); return; }
     // 不传 dailyBudget，让 store 用当前情景的每日额度兜底，避免“省/松”情景退错钱。
     const result = store.settleDay({ date: todayKey() });
-    wx.showToast({ title: result.batchPending ? `三天一结，请在 ${result.settlementDate} 结算` : (result.alreadyClosed ? '今天已经封账' : (result.transfer ? `已退回 ¥${formatFen(result.transfer.amount)}` : '今天没有可退余额')), icon: 'none' });
+    wx.showToast({
+      title: result.batchPending ? `三天一结，请在 ${result.settlementDate} 结算`
+        : result.blocked === 'not_allocated' ? '本批次还没划额，先点上面的早间划额'
+        : result.alreadyClosed ? '今天已经封账'
+        : result.transfer ? `已退回 ¥${formatFen(result.transfer.amount)}`
+        : '本批次已退完，没有可退余额',
+      icon: 'none'
+    });
   },
   allocateDay() {
     if (!this.data.active) { wx.showToast({ title: this.data.ended ? `计划已于 ${CONFIG.deadline} 结束` : `计划将于 ${CONFIG.startDate} 开始`, icon: 'none' }); return; }
     const result = store.allocateDay({ date: todayKey() });
+    const short = date => String(date).slice(5);
     const title = result.blocked === 'closed' ? '今天已封账，请先撤销封账'
       : result.blocked === 'ended' ? '计划已经结束'
       : result.blocked ? `计划将于 ${CONFIG.startDate} 开始`
-      : result.skipped ? '今天不是三天结算日'
-      : result.alreadyAllocated ? '今天已经划额'
+      : result.alreadyAllocated ? `本批次已于 ${short(result.allocationDate)} 划入`
+      : result.catchUp ? `已补划 ¥${formatFen(result.transfer.amount)}（${result.spanDays} 天额度，落在批次首日 ${short(result.allocationDate)}）`
       : `已划入 ¥${formatFen(result.transfer.amount)}`;
     wx.showToast({ title, icon: 'none' });
   },

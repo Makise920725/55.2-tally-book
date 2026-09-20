@@ -44,21 +44,53 @@ const PERIOD_INPUTS = Object.freeze([
   ['2027-01-25', '2027-01-25', '2026-12-21', '2027-01-20', '2027-02-05', 12, 4340]
 ]);
 
-function derivePeriods({ dailyBudget = CONFIG.dailyBudget } = {}) {
+// 已执行期次的四笔划转金额以流水为准。
+// 预算情景（每日额度）是“往后怎么花”的决定，改它不该追溯改写已经发生的转账；
+// 否则切一次情景就会让已封账/已执行的期次凭空对不上账。
+function executedPaydayTotals(transfers, periods = derivePeriods()) {
+  const list = Array.isArray(transfers) ? transfers : [];
+  const total = (date, kind) => list.reduce((sum, item) => (item.date === date && item.kind === kind ? sum + item.amount : sum), 0);
+  const executed = {};
+  periods.forEach(item => {
+    const income = total(item.payDate, 'payday_income');
+    if (!income) return;
+    executed[item.index] = {
+      totalIn: income,
+      billTotal: total(item.payDate, 'bill_repay'),
+      budgetToPool: total(item.payDate, 'payday_budget'),
+      saveToPocket: total(item.payDate, 'payday_save')
+    };
+  });
+  return executed;
+}
+
+function derivePeriods({ dailyBudget = CONFIG.dailyBudget, executed = null } = {}) {
   let pocket = 0;
   return PERIOD_INPUTS.map((input, index) => {
     const [payDate, nominalPayDate, workStart, workEnd, rangeEnd, days, specialOut] = input;
     const workDays = countPayableWorkdays(workStart, workEnd);
     const salary = workDays * CONFIG.salaryPerDay;
-    const totalIn = salary + CONFIG.monthlyAllowance;
-    const billTotal = BILL_TOTALS[index];
-    const budgetToPool = days * dailyBudget;
+    const allowance = CONFIG.monthlyAllowance;
+    const planTotalIn = salary + allowance;
+    const planBudgetToPool = days * dailyBudget;
     // 转入小荷包的金额不扣专项；专项是随后从③支付的计划内支出。
     // 因此 pocketAfter = 上期余额 + payday_save - special_out。
-    const saveToPocket = totalIn - billTotal - budgetToPool;
+    const actual = executed ? executed[index + 1] : null;
+    const totalIn = actual ? actual.totalIn : planTotalIn;
+    const billTotal = actual ? actual.billTotal : BILL_TOTALS[index];
+    const budgetToPool = actual ? actual.budgetToPool : planBudgetToPool;
+    const saveToPocket = actual ? actual.saveToPocket : totalIn - billTotal - budgetToPool;
     pocket += saveToPocket - specialOut;
-    return { index: index + 1, payDate, nominalPayDate, rangeStart: payDate, rangeEnd, days, workDays, salary, allowance: CONFIG.monthlyAllowance, totalIn, billTotal, budgetToPool, saveToPocket, specialOut, pocketAfter: pocket };
+    return { index: index + 1, payDate, nominalPayDate, rangeStart: payDate, rangeEnd, days, workDays, salary, allowance, totalIn, billTotal, budgetToPool, saveToPocket, specialOut, pocketAfter: pocket, executed: Boolean(actual) };
   });
+}
+
+// 期次是纯派生数据：任何时刻都按“当前情景 + 已执行流水”重算，不留第二套口径。
+function periodsForState(state) {
+  const config = (state && state.config) || {};
+  const dailyBudget = Number.isInteger(config.dailyBudget) ? config.dailyBudget : CONFIG.dailyBudget;
+  const transfers = state && state.ledger ? state.ledger.transfers : [];
+  return derivePeriods({ dailyBudget, executed: executedPaydayTotals(transfers) });
 }
 
 // 计划区间之外（未开始 / 已结束）返回 null，避免把任意日期都当成第 1 期。
@@ -84,4 +116,4 @@ function createInitialState() {
   return { version: 1, schemaVersion: 4, config: { ...CONFIG, scenario: '中' }, periods: derivePeriods(), mode: 'daily', categories: DEFAULT_CATEGORIES, openingBalances: { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 }, daySlots: {}, paydaySteps: {}, executedPaydays: {}, ledger: { expenses: [], transfers: [], specials: [], adjusts: [] } };
 }
 
-module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, SCENARIOS, allocationForMode, progressToTarget, daysUntil, derivePeriods, periodForDate, isPlanStarted, isPlanEnded, isPlanActive, daysFrom, createInitialState };
+module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, SCENARIOS, allocationForMode, progressToTarget, daysUntil, derivePeriods, executedPaydayTotals, periodsForState, periodForDate, isPlanStarted, isPlanEnded, isPlanActive, daysFrom, createInitialState };

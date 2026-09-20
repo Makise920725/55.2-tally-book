@@ -1,4 +1,5 @@
 const { todayKey } = require('../../domain/calendar');
+const { SCENARIOS } = require('../../domain/plan');
 const { formatFen } = require('../../domain/money');
 const store = require('../../store/store');
 const { exportLedgerCsv } = require('../../utils/csv');
@@ -124,13 +125,33 @@ Page({
     const ics = exportPaydayIcs(store.getState().periods);
     fileExport.deliverText({ fileName: `55kuai2-paydays-${fileExport.fileStamp()}.ics`, content: ics, fileType: 'ics', label: 'ICS' });
   },
+  // 情景只决定“往后按多少花”：已执行期次的金额以流水为准，不会被追溯改写，
+  // 弹窗里必须把这条边界说清楚，用户才知道切完之后哪些数字会变、哪些不会。
   selectScenario(event) {
     const scenario = event.currentTarget.dataset.scenario;
     const state = store.getState();
     if (scenario === state.config.scenario) return;
-    const executed = Object.keys(state.executedPaydays || {}).filter(key => state.executedPaydays[key]);
-    store.setScenario(scenario);
-    wx.showToast({ title: executed.length ? `已切换到 ${scenario}：已执行期次的流水不会改写` : `已切换到 ${scenario} 情景`, icon: 'none' });
+    const dailyBudget = formatFen(SCENARIOS[scenario]);
+    const frozen = (state.periods || []).filter(item => item.executed).map(item => `第 ${item.index} 期`);
+    wx.showModal({
+      title: `切换到 ${scenario}（¥${dailyBudget}/天）`,
+      content: frozen.length
+        ? `已执行的 ${frozen.join('、')} 保持实际转账金额不变；其余期次与储蓄轨迹按 ¥${dailyBudget}/天 重算。已封账的日结算不受影响。`
+        : `五期预算与储蓄轨迹按 ¥${dailyBudget}/天 重算。已封账的日结算按实际划入金额退款，不受影响。`,
+      confirmText: '切换',
+      cancelText: '保持不动',
+      success: result => {
+        if (!result.confirm) return;
+        const changed = store.setScenario(scenario, todayKey());
+        this.refresh();
+        if (changed.blocked) {
+          wx.showToast({ title: changed.blocked === 'ended' ? '计划已结束，账本转为只读' : '计划尚未开始，暂不能调整情景', icon: 'none' });
+          return;
+        }
+        const replanned = changed.replanned.length ? `重算 ${changed.replanned.map(index => `第 ${index} 期`).join('、')}` : '五期均已按流水锁定';
+        wx.showToast({ title: `已切换到 ${scenario} · ${replanned}`, icon: 'none' });
+      }
+    });
   },
   selectAcct(event) { this.setData({ acctIndex: Number(event.detail.value) }, () => this.refresh()); },
   toggleMode(event) {
