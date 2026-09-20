@@ -3,3 +3,4 @@
 .progress-target { position: relative; }
 .goal-marker { position: absolute; top: -8rpx; width: 3rpx; height: 24rpx; background: var(--ink); }
 .special-input { margin: 14rpx 0; padding: 22rpx; border: 1rpx solid var(--line); border-radius: 18rpx; background: var(--paper); }
+.pocket-empty { display: block; margin: 16rpx 0 4rpx; }

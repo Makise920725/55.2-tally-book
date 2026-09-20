@@ -1,1 +1,64 @@
-<view class="page"><view class="eyebrow">55块2 · 本期</view><view class="title">本期</view><view wx:if="{{!current}}" class="card"><view class="caption">{{started ? "五期计划已于 " + lastEnd + " 全部结束" : "计划尚未开始，第一期从 " + startDate + " 起算"}}</view></view><view wx:if="{{current}}" class="card"><view class="caption">本期预算池</view><view class="amount">¥ {{current.budget}}</view><view class="list-row"><text>已记支出</text><text class="value">¥{{current.spent}}</text></view><view class="list-row"><text>预计余粮</text><text class="value">¥{{current.left}}</text></view><view class="caption">{{current.rangeStart}} → {{current.rangeEnd}}　·　{{current.days}} 天</view></view><view wx:if="{{current}}" class="card"><view class="section-title">每日节奏</view><view class="list-row"><text>{{current.modeText}}</text><text class="value">一次 ¥{{current.allocation}}</text></view><view class="daily-bars"><view wx:for="{{current.series}}" wx:key="date" class="daily-bar-wrap"><view class="daily-bar {{item.over ? 'over' : (item.used ? 'used' : '')}}" style="height: {{item.height}}%;"></view></view></view><view class="caption">灰色是未使用，黑色是已记录，斜纹表示当日支出超过本期额度</view></view><view class="section-label">五期储蓄轨迹</view><block wx:for="{{periods}}" wx:key="index"><view class="card period-card"><view class="list-row"><view><view>第 {{item.index}} 期</view><view class="secondary-text">{{item.payDate}}　·　{{item.days}} 天</view></view><view class="value">¥ {{item.save}}</view></view><view class="caption">累计储蓄 ¥{{item.pocket}}　·　账单 ¥{{item.bill}}</view></view></block></view>
+<view class="page">
+  <view class="eyebrow">55块2 · 本期</view>
+  <view class="title">本期</view>
+  <view wx:if="{{!current}}" class="card"><view class="caption">{{started ? "五期计划已于 " + lastEnd + " 全部结束" : "计划尚未开始，第一期从 " + startDate + " 起算"}}</view></view>
+
+  <view wx:if="{{current}}" class="card">
+    <view class="caption">本期预算池</view>
+    <view class="amount">¥ {{current.budget}}</view>
+    <view class="list-row"><text>已记支出</text><text class="value">¥{{current.spent}}</text></view>
+    <view class="list-row"><text>预计余粮</text><text class="value">¥{{current.left}}</text></view>
+    <view class="caption">{{current.rangeStart}} → {{current.rangeEnd}}　·　{{current.days}} 天</view>
+    <button class="button secondary" bindtap="openPeriodLedger">查看本期全部流水</button>
+  </view>
+
+  <view wx:if="{{current}}" class="card">
+    <view class="section-title">每日节奏</view>
+    <view class="list-row"><text>{{current.modeText}}</text><text class="value">一次 ¥{{current.allocation}}</text></view>
+    <scroll-view class="daily-bars-scroll" scroll-x enable-flex>
+      <view class="daily-bars" style="min-width: {{current.barMinWidth}}rpx;">
+        <view wx:for="{{current.series}}" wx:key="date" class="daily-bar-wrap {{selectedDate === item.date ? 'active' : ''}}" data-date="{{item.date}}" bindtap="selectDay">
+          <view class="daily-bar {{item.over ? 'over' : (item.used ? 'used' : '')}}" style="height: {{item.height}}%;"></view>
+          <view class="daily-dot {{item.marker}}"></view>
+        </view>
+      </view>
+    </scroll-view>
+    <view class="caption">灰色未使用，黑色已记录，斜纹表示当日支出超过本期额度。柱下一颗点：灰点＝当天有额度划入，黑点＝有超支补差，空心点＝当天已结算退款。点柱子看那一天逐笔流水。</view>
+  </view>
+
+  <view wx:if="{{dayDetail}}" class="card">
+    <view class="section-title">{{dayDetail.date}}</view>
+    <view class="caption">支出 {{dayDetail.expenseCount}} 笔，净 ¥{{dayDetail.expenseTotal}}<text wx:if="{{dayDetail.reversalCount}}">　·　已冲正 {{dayDetail.reversalCount}} 笔 ¥{{dayDetail.reversalTotal}}</text></view>
+    <view wx:if="{{dayDetail.expenses.length === 0}}" class="muted day-empty">当天没有普通支出</view>
+    <view wx:for="{{dayDetail.expenses}}" wx:key="id" class="flow-row">
+      <view class="flow-body">
+        <view class="flow-title {{item.reversed ? 'struck' : ''}}">{{item.title}}<text wx:if="{{item.reversed}}" class="flow-tag struck-tag">已冲正</text></view>
+        <view class="flow-time">{{item.timeShort}}<text wx:if="{{item.note}}">　·　{{item.note}}</text></view>
+      </view>
+      <view class="flow-side"><view class="flow-amount outflow">{{item.amountText}}</view></view>
+    </view>
+    <block wx:if="{{dayDetail.hasActions}}">
+      <view class="group-label">当天账务动作</view>
+      <view wx:for="{{dayDetail.actions}}" wx:key="id" class="flow-row">
+        <view class="flow-body">
+          <view class="flow-title"><text class="flow-tag">{{item.typeLabel}}</text>{{item.title}}</view>
+          <view class="flow-sub">{{item.flowText}}</view>
+          <view class="flow-time">{{item.timeShort}}</view>
+        </view>
+        <view class="flow-side"><view class="flow-amount {{item.signed > 0 ? 'inflow' : (item.signed < 0 ? 'outflow' : 'neutral')}}">{{item.amountText}}</view></view>
+      </view>
+    </block>
+    <button class="button secondary" bindtap="openDayLedger">查看这一天全部流水</button>
+  </view>
+
+  <view class="section-label">五期储蓄轨迹</view>
+  <block wx:for="{{periods}}" wx:key="index">
+    <view class="card period-card">
+      <view class="list-row">
+        <view><view>第 {{item.index}} 期</view><view class="secondary-text">{{item.payDate}}　·　{{item.days}} 天</view></view>
+        <view class="value">¥ {{item.save}}</view>
+      </view>
+      <view class="caption">累计储蓄 ¥{{item.pocket}}　·　账单 ¥{{item.bill}}</view>
+    </view>
+  </block>
+</view>

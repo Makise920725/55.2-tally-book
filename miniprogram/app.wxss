@@ -28,3 +28,27 @@ page {
 .list-row:last-child { border-bottom: 0; }
 .list-row .secondary-text { color: var(--dim); font-size: 22rpx; }
 .list-row .value { font-family: "Noto Serif SC", "Songti SC", serif; font-variant-numeric: tabular-nums; }
+
+/* 统一流水展示（今日 / 本期 / 储蓄 / 全量流水页共用，样式跟随水墨黑白规范） */
+.flow-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16rpx; padding: 20rpx 0; border-bottom: 1rpx solid var(--line); }
+.flow-row:last-child { border-bottom: 0; }
+.flow-row.selectable { padding: 20rpx 8rpx; }
+.flow-row.selectable.active { background: var(--paper); border-radius: 16rpx; }
+.flow-body { flex: 1; min-width: 0; }
+.flow-title { font-size: 25rpx; font-weight: 600; letter-spacing: .5rpx; }
+.flow-sub { margin-top: 4rpx; color: var(--dim); font-size: 22rpx; }
+.flow-time { margin-top: 4rpx; color: var(--faint); font-size: 20rpx; }
+.flow-side { text-align: right; }
+.flow-amount { font-family: "Noto Serif SC", "Songti SC", serif; font-size: 27rpx; font-variant-numeric: tabular-nums; }
+.flow-amount.inflow { color: var(--ink); }
+.flow-amount.outflow { color: var(--ink-2); }
+.flow-amount.neutral { color: var(--dim); }
+.flow-tag { display: inline-block; margin-right: 8rpx; padding: 2rpx 10rpx; border: 1rpx solid var(--line); border-radius: 999rpx; color: var(--dim); font-size: 20rpx; vertical-align: 2rpx; }
+.flow-summary { display: flex; flex-wrap: wrap; gap: 10rpx 18rpx; margin-bottom: 20rpx; }
+.flow-summary .chip { padding: 6rpx 14rpx; border: 1rpx solid var(--line); border-radius: 999rpx; background: var(--paper); color: var(--ink-2); font-size: 21rpx; font-variant-numeric: tabular-nums; }
+.flow-group-head { display: flex; justify-content: space-between; padding: 26rpx 0 8rpx; color: var(--dim); font-size: 22rpx; letter-spacing: 1rpx; }
+.flow-group-head .value { font-family: "Noto Serif SC", "Songti SC", serif; color: var(--ink-2); }
+.chip-row { display: flex; flex-wrap: wrap; gap: 12rpx; margin-bottom: 18rpx; }
+.chip { min-width: 96rpx; margin: 0; padding: 12rpx 18rpx; border: 1rpx solid var(--line); border-radius: 999rpx; background: var(--paper); color: var(--ink-2); font-size: 22rpx; line-height: 1.4; text-align: center; }
+.chip.active { border-color: var(--ink); background: var(--ink); color: #fff; }
+.filter-input { padding: 22rpx; border: 1rpx solid var(--line); border-radius: 18rpx; background: var(--paper); font-size: 24rpx; }

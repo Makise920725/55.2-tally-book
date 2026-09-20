@@ -1,0 +1,87 @@
+<view class="page {{selectionMode ? 'batching' : ''}}">
+  <view class="eyebrow">55块2 · 流水</view>
+  <view class="title">全部流水</view>
+
+  <view class="card">
+    <view class="ledger-count">共 <text class="ledger-num">{{count}}</text> 条流水</view>
+    <view class="ledger-totals">
+      <view class="ledger-total"><text class="ledger-total-label">支出合计</text><text class="ledger-total-value">{{summary.expense}}</text></view>
+      <view class="ledger-total"><text class="ledger-total-label">账户划转</text><text class="ledger-total-value">{{summary.transfer}}</text></view>
+      <view class="ledger-total"><text class="ledger-total-label">专项合计</text><text class="ledger-total-value">{{summary.special}}</text></view>
+      <view class="ledger-total"><text class="ledger-total-label">校准合计</text><text class="ledger-total-value">{{summary.adjust}}</text></view>
+    </view>
+    <view class="caption">流水只追加：不删除也不改数，记错了在详情里「冲正这笔支出」（原记录保留，追加一笔负向支出）。校准类错误仍可用「我的 → 金额校准」追加差额。</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">时间</view>
+    <view class="chip-row">
+      <button wx:for="{{ranges}}" wx:key="key" class="chip {{rangeKey === item.key ? 'active' : ''}}" data-key="{{item.key}}" bindtap="selectRange">{{item.label}}</button>
+    </view>
+    <view wx:if="{{rangeKey === 'custom'}}" class="date-row">
+      <picker mode="date" value="{{startDate}}" start="{{minDate}}" end="{{maxDate}}" bindchange="selectStart"><view class="date-field">开始　{{startDate || '选择日期'}}</view></picker>
+      <picker mode="date" value="{{endDate}}" start="{{minDate}}" end="{{maxDate}}" bindchange="selectEnd"><view class="date-field">结束　{{endDate || '选择日期'}}</view></picker>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">类型与账户</view>
+    <view class="chip-row">
+      <button wx:for="{{types}}" wx:key="key" class="chip {{typeKey === item.key ? 'active' : ''}}" data-key="{{item.key}}" bindtap="selectType">{{item.label}}</button>
+    </view>
+    <view class="chip-row">
+      <button wx:for="{{accounts}}" wx:key="key" class="chip {{accountKey === item.key ? 'active' : ''}}" data-key="{{item.key}}" bindtap="selectAccount">{{item.label}}</button>
+    </view>
+    <view class="chip-row">
+      <button class="chip {{hideReversals ? 'active' : ''}}" bindtap="toggleHideReversals">{{hideReversals ? '正在隐藏冲正对' : '隐藏已冲正的成对记录'}}</button>
+      <button class="chip {{selectionMode ? 'active' : ''}}" bindtap="toggleBatchMode">{{selectionMode ? '退出批量冲正' : '批量冲正'}}</button>
+    </view>
+    <view class="search-row">
+      <input class="filter-input search-input" placeholder="搜索分类、说明、备注、账户" value="{{keyword}}" confirm-type="search" bindinput="inputKeyword" />
+      <text wx:if="{{keyword}}" class="search-clear" bindtap="clearKeyword">清除</text>
+    </view>
+  </view>
+
+  <view wx:if="{{empty}}" class="card"><view class="muted">这个筛选条件下没有流水。</view></view>
+
+  <view wx:for="{{groups}}" wx:key="date" wx:for-item="group" class="card">
+    <view class="flow-group-head"><text>{{group.date}}　·　{{group.count}} 笔</text><text class="value">{{group.expenseText}}</text></view>
+    <block wx:for="{{group.items}}" wx:key="id" wx:for-item="item">
+      <view class="flow-row selectable {{detailId === item.id ? 'active' : ''}}" data-id="{{item.id}}" bindtap="toggleDetail">
+        <view class="flow-body">
+          <view class="flow-title {{item.reversed ? 'struck' : ''}}"><text class="flow-tag">{{item.typeLabel}}</text>{{item.title}}<text wx:if="{{item.reversed}}" class="flow-tag struck-tag">已冲正</text></view>
+          <view class="flow-sub">{{item.flowText}}<text wx:if="{{item.note}}">　·　{{item.note}}</text></view>
+          <view class="flow-time">{{item.eventDate}}　{{item.timeShort}}</view>
+        </view>
+        <view class="flow-side">
+          <view class="flow-amount {{item.signedFen > 0 ? 'inflow' : (item.signedFen < 0 ? 'outflow' : 'neutral')}}">{{item.amountText}}</view>
+          <view class="flow-hint">{{detailId === item.id ? '收起' : '详情'}}</view>
+        </view>
+      </view>
+      <view wx:if="{{item.detail}}" class="detail-card">
+        <view wx:for="{{item.detail}}" wx:key="label" wx:for-item="row" class="list-row"><text>{{row.label}}</text><text class="value detail-value">{{row.value}}</text></view>
+        <block wx:if="{{item.canReverse}}">
+          <button class="button secondary reverse-button" data-id="{{item.id}}" data-source="{{item.source}}" data-amount="{{item.remainingText}}" catchtap="reverseExpense">全额冲正剩余 ¥{{item.remainingText}}</button>
+          <view class="partial-row">
+            <input class="filter-input partial-input" type="digit" placeholder="只冲一部分，例如 12.00" value="{{partialAmount}}" data-id="{{item.id}}" data-source="{{item.source}}" data-remaining="{{item.remainingText}}" bindinput="inputPartial" catchtap="noop" />
+            <button class="button secondary partial-ok" data-id="{{item.id}}" data-source="{{item.source}}" data-remaining="{{item.remainingText}}" catchtap="reversePartial">冲该金额</button>
+          </view>
+        </block>
+        <view wx:else class="caption reverse-hint">流水只追加：不能删除也不能改数，只有误记的支出/专项可以冲正。</view>
+      </view>
+    </block>
+  </view>
+
+  <view wx:if="{{moreDays > 0}}" class="card load-more"><view class="muted">上拉继续加载，还有 {{moreDays}} 天未显示</view></view>
+
+  <view wx:if="{{selectionMode}}" class="batch-bar">
+    <view class="batch-copy">
+      <view>已选 {{selectedCount}} 笔<text wx:if="{{batchSummary}}">　合计 ¥{{batchSummary.amount}}</text></view>
+      <view class="muted batch-hint">{{batchSummary ? batchSummary.hint : '点选左侧方框，只能选还能冲正的支出或专项。'}}</view>
+    </view>
+    <view class="batch-actions">
+      <button class="chip" bindtap="toggleBatchMode">取消</button>
+      <button class="button batch-ok {{selectedCount ? '' : 'disabled'}}" bindtap="confirmBatch">确认冲正</button>
+    </view>
+  </view>
+</view>

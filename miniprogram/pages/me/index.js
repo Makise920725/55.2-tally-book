@@ -3,9 +3,12 @@ const { formatFen } = require('../../domain/money');
 const store = require('../../store/store');
 const { exportLedgerCsv } = require('../../utils/csv');
 const { exportPaydayIcs } = require('../../utils/ics');
+const { buildLedgerEvents } = require('../../domain/ledger-view');
+const backup = require('../../utils/backup');
+const fileExport = require('../../utils/file');
 
 Page({
-  data: { config: null, expenseCount: 0, mode: 'daily', acct: 'BANK1', acctIndex: 0, accountIds: ['BANK1', 'POOL2', 'POCKET3'], accountOptions: ['工资卡 ①', '余额宝 ②', '小荷包 ③'], realBalance: '', bookBalance: '', adjustNote: '', categoryName: '', categoryMark: '', categories: [] },
+  data: { config: null, expenseCount: 0, eventCount: 0, backupView: null, mode: 'daily', acct: 'BANK1', acctIndex: 0, accountIds: ['BANK1', 'POOL2', 'POCKET3'], accountOptions: ['工资卡 ①', '余额宝 ②', '小荷包 ③'], realBalance: '', bookBalance: '', adjustNote: '', categoryName: '', categoryMark: '', categories: [] },
   onLoad() { this.unsubscribe = store.subscribe(() => this.refresh()); this.refresh(); },
   onShow() { this.refresh(); },
   onUnload() { if (this.unsubscribe) this.unsubscribe(); },
@@ -21,22 +24,105 @@ Page({
         targetSavings: lastPeriod ? formatFen(lastPeriod.pocketAfter) : '0.00'
       },
       expenseCount: state.ledger.expenses.length,
+      eventCount: buildLedgerEvents(state).length,
+      backupView: this.backupView(),
       mode: state.mode || 'daily',
       acct: this.data.accountIds[this.data.acctIndex],
       categories: state.categories
     });
   },
+  openLedger() { wx.navigateTo({ url: '/pages/ledger/index' }); },
+  shortTime(iso) {
+    if (!iso) return '';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = value => String(value).padStart(2, '0');
+    return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  },
+  backupView() {
+    const meta = store.backupMeta();
+    return {
+      lastBackupText: meta.lastBackupAt ? `上次备份 ${this.shortTime(meta.lastBackupAt)}` : '尚未备份',
+      lastRestoreText: meta.lastRestoreAt ? `上次恢复 ${this.shortTime(meta.lastRestoreAt)}` : '',
+      canUndoRestore: meta.canUndoRestore,
+      summary: backup.describeState(store.getState())
+    };
+  },
+  // ---- 备份与恢复：完整快照走 JSON，CSV 仍然只是给人看的导出 ----
+  backupNow() {
+    const text = backup.createBackupText(store.getState());
+    fileExport.deliverText({
+      fileName: backup.backupFileName(fileExport.fileStamp()),
+      content: text, fileType: 'json', label: '备份', preferShare: true,
+      done: () => { store.markBackedUp(); this.refresh(); }
+    });
+  },
+  restoreFromFile() {
+    if (!wx.chooseMessageFile) { wx.showToast({ title: '请在小程序里选择聊天记录中的文件', icon: 'none' }); return; }
+    wx.chooseMessageFile({
+      count: 1, type: 'file', extension: ['json'],
+      success: result => {
+        const file = result.tempFiles && result.tempFiles[0];
+        if (!file) return;
+        const fs = wx.getFileSystemManager();
+        if (!fs || !fs.readFile) { wx.showToast({ title: '当前环境无法读取文件', icon: 'none' }); return; }
+        fs.readFile({
+          filePath: file.path, encoding: 'utf8',
+          success: read => this.applyBackupText(read.data),
+          fail: () => wx.showToast({ title: '读取文件失败', icon: 'none' })
+        });
+      },
+      fail: () => wx.showToast({ title: '未选择文件', icon: 'none' })
+    });
+  },
+  restoreFromClipboard() {
+    wx.getClipboardData({ success: result => this.applyBackupText(result.data), fail: () => wx.showToast({ title: '剪贴板是空的', icon: 'none' }) });
+  },
+  applyBackupText(text) {
+    const parsed = backup.parseBackupText(text);
+    if (!parsed.ok) {
+      wx.showModal({ title: '备份不可用', content: parsed.problems.join('\n'), showCancel: false });
+      this.refresh();
+      return;
+    }
+    const current = store.getState();
+    const exportedAt = this.shortTime(parsed.meta.exportedAt);
+    wx.showModal({
+      title: '整体替换当前账本',
+      content: `当前：${backup.describeState(current)}\n备份：${backup.describeState(parsed.state)}${exportedAt ? `（导出于 ${exportedAt}）` : ''}\n\n替换前会自动留下当前账本，可在本页一键撤销。`,
+      confirmText: '确认恢复', cancelText: '先不动',
+      success: result => {
+        if (!result.confirm) return;
+        const done = store.restoreFromBackup(parsed.state);
+        wx.showToast({
+          title: done.ok ? '已恢复备份' : (done.error === 'persist-failed' ? '本机存储写入失败，已退回原账本' : '恢复失败，账本未改动'),
+          icon: 'none'
+        });
+        this.refresh();
+      }
+    });
+  },
+  undoRestore() {
+    wx.showModal({
+      title: '撤销上次恢复',
+      content: '用恢复前留下的账本替换现在的账本。',
+      confirmText: '撤销', cancelText: '先不动',
+      success: result => {
+        if (!result.confirm) return;
+        const done = store.undoRestore();
+        wx.showToast({ title: done.ok ? '已回到恢复前' : '没有可撤销的恢复', icon: 'none' });
+        this.refresh();
+      }
+    });
+  },
+  // 导出主出口改为“写文件 + 打开/分享”，剪贴板只在两者都不可用时兜底。
   exportCsv() {
     const csv = exportLedgerCsv(store.getState());
-    wx.setClipboardData({ data: csv, success: () => wx.showToast({ title: 'CSV 已复制', icon: 'none' }) });
+    fileExport.deliverText({ fileName: `55kuai2-ledger-${fileExport.fileStamp()}.csv`, content: csv, fileType: 'csv', label: 'CSV' });
   },
   exportIcs() {
     const ics = exportPaydayIcs(store.getState().periods);
-    if (wx.getFileSystemManager && wx.env && wx.env.USER_DATA_PATH) {
-      const filePath = `${wx.env.USER_DATA_PATH}/55kuai2-paydays.ics`;
-      try { wx.getFileSystemManager().writeFileSync(filePath, ics, 'utf8'); wx.openDocument({ filePath, fileType: 'ics', showMenu: true, fail: () => wx.setClipboardData({ data: ics, success: () => wx.showToast({ title: 'ICS 已复制', icon: 'none' }) }) }); return; } catch (error) { /* clipboard fallback */ }
-    }
-    wx.setClipboardData({ data: ics, success: () => wx.showToast({ title: 'ICS 已复制', icon: 'none' }) });
+    fileExport.deliverText({ fileName: `55kuai2-paydays-${fileExport.fileStamp()}.ics`, content: ics, fileType: 'ics', label: 'ICS' });
   },
   selectScenario(event) {
     const scenario = event.currentTarget.dataset.scenario;

@@ -11,9 +11,25 @@
     <button class="button" bindtap="addExpense">保存支出</button>
   </view>
   <view class="card">
-    <view class="section-title">今日流水</view>
+    <view class="section-title">今日全部账务变化</view>
+    <view wx:if="{{summary && summary.count}}" class="flow-summary">
+      <text class="chip">支出 ¥{{summary.expense}}</text>
+      <text class="chip">划入 ¥{{summary.transferIn}}</text>
+      <text class="chip">补差 ¥{{summary.cover}}</text>
+      <text class="chip">退款 ¥{{summary.refund}}</text>
+      <text class="chip">专项 ¥{{summary.special}}</text>
+      <text class="chip" wx:if="{{summary.adjust}}">校准 {{summary.adjust}}</text>
+    </view>
     <view wx:if="{{entries.length === 0}}" class="muted">还没有记录</view>
-    <view wx:for="{{entries}}" wx:key="id" class="entry"><text>{{item.categoryName}}</text><text>− ¥{{item.amountText}}</text></view>
+    <view wx:for="{{entries}}" wx:key="id" class="flow-row">
+      <view class="flow-body">
+        <view class="flow-title"><text class="flow-tag">{{item.typeLabel}}</text>{{item.title}}</view>
+        <view class="flow-sub">{{item.flowText}}<text wx:if="{{item.note}}">　·　{{item.note}}</text></view>
+        <view class="flow-time">{{item.eventDate}}　{{item.timeShort}}</view>
+      </view>
+      <view class="flow-side"><view class="flow-amount {{item.signedFen > 0 ? 'inflow' : (item.signedFen < 0 ? 'outflow' : 'neutral')}}">{{item.amountText}}</view></view>
+    </view>
+    <button class="button secondary flow-more" bindtap="openLedger">查看今日全部流水</button>
   </view>
   <button wx:if="{{active}}" class="button secondary settle" bindtap="allocateDay">早间划额　·　从余额宝转入工资卡</button>
   <button wx:if="{{active && !closed}}" class="button secondary settle" bindtap="settleDay">晚间结算　·　退回余额宝</button>
