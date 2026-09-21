@@ -56,8 +56,9 @@ test('候选批次只吞没“还没有批次身份”的日子，裁到相邻�
   sealedDailyThenSwitch();
   const target = store.getState().ledger.expenses.find(item => item.date === '2026-11-21');
   const result = store.reverseExpense({ id: target.id, asOfDate: '2026-11-24' });
-  assert.equal(result.range.start, '2026-11-20', '11-20 还没有批次身份，可以并入');
-  assert.equal(result.range.end, '2026-11-21', '但绝不能跨过已封账的 11-22');
+  // 11-21 那笔支出落地时（每日模式）就同时定下了批次身份：单日批次，阈值/划额/退款同一个范围
+  assert.equal(result.range.start, '2026-11-21');
+  assert.equal(result.range.end, '2026-11-21', '绝不会跨过已封账的 11-22，也不回头吞掉 11-20');
   const slots = result.state.daySlots;
   assert.equal(Object.keys(slots).filter(key => slots[key].batchStart === '2026-11-20' && slots[key].batchEnd === '2026-11-22').length, 0, '不存在 11-20~11-22 这个批次');
   // 之后正常开新批次：照常按三日网格归批，且不会跨过已封账的老批次

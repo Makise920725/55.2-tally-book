@@ -505,3 +505,60 @@ test('本期页能给历史上漏划额的那天补划，并接着结算闭环�
     assert.equal(page.data.dayDetail.dayNotice, '这天还没到，先把当天的账记实');
   }, [2026, 8, 27, 9, 0, 0]);
 });
+
+test('场景五：第五步「清理余粮」在发薪日页与储蓄页都必须先确认再写账', () => {
+  // 今天 = 2026-09-25；09-24 已经走完一天，没花完的 35.19 退回余额宝
+  freezeNow(() => {
+    const { accountBalances } = require('../miniprogram/domain/ledger');
+    const balancesOf = () => {
+      const state = store.getState();
+      return accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials, state.ledger.adjusts);
+    };
+    const carryCount = () => store.getState().ledger.transfers.filter(item => item.kind === 'carry_over').length;
+    useWx();
+    store.reset();
+    store.executePayday(1, DAY);
+    store.allocateDay({ date: DAY });
+    store.addExpense({ date: DAY, category: 'meal', amountYuan: 20 });
+    store.settleDay({ date: DAY });
+
+    const payday = mount('../miniprogram/pages/payday/index.js');
+    payday.onLoad();
+    assert.equal(payday.data.canSweep, true);
+    assert.match(payday.data.steps[4].amount, /当前可清理 ¥35\.19/);
+    assert.match(payday.data.sweepText, /清理余额宝余粮 ¥35\.19 → 小荷包/);
+
+    // 先点「先不转」：一个字都不该写
+    useWx({ modalCancel: true });
+    payday.sweepSurplus();
+    assert.equal(carryCount(), 0, '没确认就不能搬钱');
+
+    // 再确认：写入一笔 carry_over，钱只是从余额宝搬到小荷包
+    const before = balancesOf();
+    const calls = useWx();
+    payday.sweepSurplus();
+    assert.equal(calls.modal.length, 1);
+    assert.match(calls.modal[0].content, /把多出来的 ¥35\.19 转进小荷包/);
+    assert.equal(carryCount(), 1);
+    assert.deepEqual(store.getState().ledger.transfers.filter(item => item.kind === 'carry_over').map(item => `${item.date}=${item.amount}`), ['2026-09-25=3519']);
+    assert.ok(calls.toast.some(title => title.includes('已转入小荷包 ¥35.19')));
+    const after = balancesOf();
+    assert.equal(after.POOL2, before.POOL2 - 3519);
+    assert.equal(after.POCKET3, before.POCKET3 + 3519);
+    assert.equal(after.POOL2 + after.POCKET3, before.POOL2 + before.POCKET3, '清理只是搬钱，不创造钱');
+
+    const pocket = mount('../miniprogram/pages/pocket/index.js');
+    pocket.onLoad();
+    assert.equal(pocket.data.surplusCard, null, '刚清理完就不该再劝用户转钱');
+    assert.match(pocket.data.periods[0].sweptText, /含清理转入 ¥35\.19/);
+
+    // 再过完 09-25 这一天：封账后今天的额度变成熟余粮，储蓄页重新出现卡片
+    store.allocateDay({ date: '2026-09-25' });
+    store.addExpense({ date: '2026-09-25', category: 'snack', amountYuan: 10 });
+    store.settleDay({ date: '2026-09-25' });
+    pocket.refresh();
+    assert.equal(pocket.data.surplusCard.amountText, '45.19');
+    pocket.sweepSurplus();
+    assert.equal(carryCount(), 2);
+  }, [2026, 8, 25, 9, 0, 0]);
+});

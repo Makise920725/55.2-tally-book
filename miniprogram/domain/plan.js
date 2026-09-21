@@ -93,6 +93,19 @@ function periodsForState(state) {
   return derivePeriods({ dailyBudget, executed: executedPaydayTotals(transfers) });
 }
 
+// 余额宝里“本周期用不完”的钱 = 余额 −（剩余天数 × 当前情景日额度）。
+// 这就是发薪日 SOP 第五步「清理上期结余」该真实转进小荷包的金额：
+// 计划表假设预算会被花光（saveToPocket = totalIn − bill − budgetToPool），
+// 没花完的余粮、以及改小情景后多出来的额度，都只会躺在余额宝里，不计入储蓄。
+function poolSurplus({ poolBalance, dailyBudget, asOfDate, rangeEnd, daySettled = false }) {
+  if (!Number.isInteger(poolBalance) || !Number.isInteger(dailyBudget)) throw new TypeError('poolSurplus needs integer cents');
+  // 今天所在的批次已封账 → 今天不用再预留额度（未花的钱已经退回余额宝，属于余粮）；
+  // 这样截止日当天结完账，最后一期的余粮也还能清干净。
+  const days = Math.max(0, daysFrom(asOfDate, rangeEnd) + (daySettled ? 0 : 1));
+  const needed = days * dailyBudget;
+  return { remainingDays: days, needed, surplus: Math.max(0, poolBalance - needed) };
+}
+
 // 计划区间之外（未开始 / 已结束）返回 null，避免把任意日期都当成第 1 期。
 function periodForDate(date, periods = derivePeriods()) {
   return periods.find(item => date >= item.rangeStart && date <= item.rangeEnd) || null;
@@ -116,4 +129,4 @@ function createInitialState() {
   return { version: 1, schemaVersion: 4, config: { ...CONFIG, scenario: '中' }, periods: derivePeriods(), mode: 'daily', categories: DEFAULT_CATEGORIES, openingBalances: { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 }, daySlots: {}, paydaySteps: {}, executedPaydays: {}, ledger: { expenses: [], transfers: [], specials: [], adjusts: [] } };
 }
 
-module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, SCENARIOS, allocationForMode, progressToTarget, daysUntil, derivePeriods, executedPaydayTotals, periodsForState, periodForDate, isPlanStarted, isPlanEnded, isPlanActive, daysFrom, createInitialState };
+module.exports = { CONFIG, BILL_TOTALS, DEFAULT_CATEGORIES, SCENARIOS, allocationForMode, poolSurplus, progressToTarget, daysUntil, derivePeriods, executedPaydayTotals, periodsForState, periodForDate, isPlanStarted, isPlanEnded, isPlanActive, daysFrom, createInitialState };

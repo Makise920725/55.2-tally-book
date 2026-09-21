@@ -14,6 +14,7 @@ const KIND_LABELS = Object.freeze({
   payday_budget: '预算入余额宝',
   payday_save: '转入小荷包',
   daily_alloc: '日额度划入',
+  carry_over: '清理余粮转存',
   overspend_cover: '超支补差',
   daily_refund: '日结退款'
 });
@@ -28,7 +29,8 @@ const ACCOUNT_LABELS = Object.freeze({
 
 // 发薪日四步在同一毫秒批量落库，createdAt 分不出先后；这里按 SOP 顺序（到账→还款→入池→转存）展示，
 // 其余流水仍按 id 倒序兜底，保证顺序稳定可复现。
-const KIND_SEQUENCE = Object.freeze({ payday_income: 1, bill_repay: 2, payday_budget: 3, payday_save: 4 });
+// 第五步「清理上期结余」紧跟在转入小荷包之后展示，与 SOP 顺序一致。
+const KIND_SEQUENCE = Object.freeze({ payday_income: 1, bill_repay: 2, payday_budget: 3, payday_save: 4, carry_over: 5 });
 
 function pad(value) { return String(value).padStart(2, '0'); }
 

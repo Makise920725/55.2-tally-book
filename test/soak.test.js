@@ -46,6 +46,7 @@ function soak(seed) {
   const problems = [];
   let catchUps = 0;
   let sealedBatches = 0;
+  let sweeps = 0;
   for (let date = CONFIG.startDate; date <= CONFIG.deadline && problems.length < 5; date = nextDay(date)) {
     const periods = store.getState().periods;
     const payday = periods.find(item => item.payDate === date);
@@ -76,6 +77,19 @@ function soak(seed) {
         store.reverseExpense({ id: target.id, amountYuan: rand() < 0.5 ? target.amount / 200 : undefined, asOfDate: date });
       }
     }
+    // 8% 概率执行第五步「清理上期结余」：转完之后必须刚好只剩本期剩余开销，且不创造钱
+    if (rand() < 0.08) {
+      const before = accountBalances(store.getState().ledger.transfers, store.getState().ledger.expenses, store.getState().openingBalances, store.getState().ledger.specials, store.getState().ledger.adjusts);
+      const swept = store.sweepPoolSurplus({ asOfDate: date });
+      if (swept.transfer) {
+        sweeps += 1;
+        const after = accountBalances(store.getState().ledger.transfers, store.getState().ledger.expenses, store.getState().openingBalances, store.getState().ledger.specials, store.getState().ledger.adjusts);
+        if (after.POOL2 + after.POCKET3 !== before.POOL2 + before.POCKET3) problems.push(`${date} 清理余粮凭空创造/蒸发了钱`);
+        if (after.POOL2 < 0) problems.push(`${date} 清理过度，余额宝被转成负数`);
+        if (store.previewPoolSurplus(date).surplus !== 0) problems.push(`${date} 清理后仍算出余粮，口径没收敛`);
+        if (store.sweepPoolSurplus({ asOfDate: date }).skipped !== true) problems.push(`${date} 同一天重复清理却没有 skipped`);
+      }
+    }
     const state = store.getState();
     const balances = accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials, state.ledger.adjusts);
     if (balances.BANK1 + balances.POOL2 + balances.POCKET3 + balances.BILL + balances.OUT !== 0) problems.push(`${date} 复式记账不平`);
@@ -101,7 +115,7 @@ function soak(seed) {
       if (net !== 0) problems.push(`${date} 已封账批次 ${range.start}~${range.end} 未归零，差 ${net}`);
     });
   }
-  return { problems, catchUps, sealedBatches };
+  return { problems, catchUps, sealedBatches, sweeps };
 }
 
 test('浸泡：随机漏划额 + 切模式 + 切情景 + 冲正，账本不变量始终成立', () => {
@@ -110,6 +124,7 @@ test('浸泡：随机漏划额 + 切模式 + 切情景 + 冲正，账本不变�
   const results = [7919, 104729, 209458, 2932412, 942561, 245502].map(soak);
   const problems = results.flatMap(item => item.problems);
   assert.ok(results.some(item => item.catchUps > 0), '剧本应当真的走过补划路径');
+  assert.ok(results.some(item => item.sweeps > 0), '剧本应当真的走过第五步清理');
   assert.ok(results.every(item => item.sealedBatches > 100), '剧本应当封掉足够多的批次');
   assert.deepEqual(problems, []);
 });

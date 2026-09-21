@@ -1,7 +1,7 @@
-const { createExpense, createExpenseReversal, createTransfer, createSpecial, createSpecialReversal, ACCT } = require('../domain/ledger');
+const { createExpense, createExpenseReversal, createTransfer, createSpecial, createSpecialReversal, accountBalances, ACCT } = require('../domain/ledger');
 const { yuanToFen } = require('../domain/money');
 const { parseDate, dateKey, todayKey } = require('../domain/calendar');
-const { periodsForState, SCENARIOS } = require('../domain/plan');
+const { periodsForState, periodForDate, poolSurplus, SCENARIOS } = require('../domain/plan');
 const storage = require('../utils/storage');
 
 let state = null;
@@ -57,7 +57,9 @@ function addExpense({ date, category, amountYuan, note = '' }) {
   }
   let daySlots = current.daySlots || {};
   if (!hasAllocationRecord(current, start) && !Number.isInteger((daySlots[start] || {}).plannedBudget)) {
-    daySlots = { ...daySlots, [start]: { ...(daySlots[start] || {}), plannedBudget: budget } };
+    // 钉阈值的同时把批次身份一起登记下来：阈值、批次范围、日后补划的金额必须是同一个批次，
+    // 否则“单日阈值 + 后来的多日批次”会少划一天额度，封账后工资卡凭空短钱（浸泡种子 324692）。
+    daySlots = markBatchSlots(daySlots, range, { plannedBudget: budget });
   }
   // coverFen / budgetFen 一并回传：页面要报的是“这一笔真实产生了多少补差”，
   // 自己拿当前情景额度再估一遍，会在改过情景的那天说出没发生过的补差。
@@ -581,6 +583,42 @@ function undoRestore() {
   return { ok: true, state: result.state, meta: backupMeta() };
 }
 
+// ---- 第五步「清理上期结余」：余额宝里用不完的余粮真实转进小荷包 ----
+// surplusPlan 同时服务页面显示与实际写入：看到的金额和转走的金额不可能变成两套算法。
+function surplusPlan(current, asOfDate) {
+  const planBlock = planOperationBlock(current, asOfDate);
+  if (planBlock) return { blocked: planBlock };
+  const period = periodForDate(asOfDate, current.periods);
+  if (!period) return { blocked: 'outside_period' };
+  const balances = accountBalances(current.ledger.transfers, current.ledger.expenses, current.openingBalances, current.ledger.specials, current.ledger.adjusts);
+  const { remainingDays, needed, surplus } = poolSurplus({
+    poolBalance: balances[ACCT.POOL2], dailyBudget: current.config.dailyBudget, asOfDate, rangeEnd: period.rangeEnd,
+    daySettled: Boolean(((current.daySlots || {})[asOfDate] || {}).closed)
+  });
+  return {
+    periodIndex: period.index, rangeStart: period.rangeStart, rangeEnd: period.rangeEnd, deadline: current.config.deadline,
+    poolBalance: balances[ACCT.POOL2], pocketBalance: balances[ACCT.POCKET3], remainingDays, remainingNeed: needed, surplus
+  };
+}
+
+function previewPoolSurplus(date = todayKey()) { return { date, ...surplusPlan(getState(), date) }; }
+
+// 跨账户搬真钱：页面必须先确认再调用。清理后余额宝只剩“剩余天数的计划开销”，
+// 再点一次只会算出 0（skipped），天然幂等，不需要额外的“已清理”标记。
+function sweepPoolSurplus({ asOfDate = todayKey(), amountFen } = {}) {
+  const current = getState();
+  const plan = surplusPlan(current, asOfDate);
+  if (plan.blocked) return { state: current, persisted: true, blocked: plan.blocked };
+  const amount = Number.isInteger(amountFen) && amountFen > 0 ? Math.min(amountFen, plan.surplus) : plan.surplus;
+  if (!amount) return { state: current, persisted: true, skipped: true, surplus: 0, poolBalance: plan.poolBalance };
+  const transfer = createTransfer({ id: uid('sweep'), date: asOfDate, from: ACCT.POOL2, to: ACCT.POCKET3, amount, kind: 'carry_over' });
+  transfer.note = `清理余额宝余粮 → 小荷包（第 ${plan.periodIndex} 期剩余 ${plan.remainingDays} 天计划开销之外的钱）`;
+  return {
+    ...commit({ ...current, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }),
+    transfer, swept: amount, periodIndex: plan.periodIndex
+  };
+}
+
 function newCategoryId() { return uid('category'); }
 
 function addCategory({ id, name, mark }) {
@@ -595,4 +633,4 @@ function removeCategory(id) {
   return commit({ ...current, categories: current.categories.filter(item => item.id !== id) });
 }
 
-module.exports = { getState, newCategoryId, subscribe, addExpense, previewAllocation, previewSettlement, reverseExpense, reverseSpecial, reverseEntries, previewReversal, settleDay, reopenDay, togglePaydayStep, executePayday, addSpecial, setMode, setScenario, allocateDay, addCategory, removeCategory, addAdjust, reset, backupMeta, markBackedUp, restoreFromBackup, undoRestore };
+module.exports = { getState, newCategoryId, subscribe, addExpense, previewAllocation, previewSettlement, previewPoolSurplus, sweepPoolSurplus, reverseExpense, reverseSpecial, reverseEntries, previewReversal, settleDay, reopenDay, togglePaydayStep, executePayday, addSpecial, setMode, setScenario, allocateDay, addCategory, removeCategory, addAdjust, reset, backupMeta, markBackedUp, restoreFromBackup, undoRestore };

@@ -2,6 +2,7 @@ const { CONFIG, derivePeriods, progressToTarget, daysUntil } = require('../../do
 const { formatFen } = require('../../domain/money');
 const { accountBalances, ACCT, sum } = require('../../domain/ledger');
 const { buildLedgerEvents, accountBalanceFromEvents, summarizeEvents } = require('../../domain/ledger-view');
+const sweep = require('../../utils/sweep');
 const { todayKey } = require('../../domain/calendar');
 const store = require('../../store/store');
 
@@ -12,16 +13,19 @@ Page({
     current: '', target: '', goal: '', goalProgress: 0, goalMarker: 0, targetProgress: 0, daysLeft: 0,
     bankBalance: '0.00', poolBalance: '0.00', pocketBalance: '0.00',
     pocketEvents: [], pocketMore: 0, pocketNetText: '0.00', pocketMatched: true, pocketIncomeText: '0.00', pocketSpecialText: '0.00', pocketAdjustText: '0.00',
-    specialReason: '', specialAmount: '', periods: []
+    specialReason: '', specialAmount: '', periods: [], surplusCard: null, poolLeftoverHint: ''
   },
   onLoad() { this.unsubscribe = store.subscribe(() => this.refresh()); this.refresh(); },
   onShow() { this.refresh(); },
   onUnload() { if (this.unsubscribe) this.unsubscribe(); },
   refresh() {
     const state = store.getState();
+    const surplus = store.previewPoolSurplus(todayKey());
     let actualAfter = 0;
     const periods = (state.periods || derivePeriods()).map(item => {
-      const saved = sum(state.ledger.transfers, transfer => transfer.kind === 'payday_save' && transfer.date === item.payDate);
+      const swept = sum(state.ledger.transfers, transfer => transfer.kind === 'carry_over' && transfer.date >= item.rangeStart && transfer.date <= item.rangeEnd);
+      // 第五步转进来的余粮算“已经存下”；但计划列仍只按 payday_save 派生，否则一笔钱会被数两次。
+      const saved = sum(state.ledger.transfers, transfer => (transfer.kind === 'payday_save' && transfer.date === item.payDate) || transfer.kind === 'carry_over' && transfer.date >= item.rangeStart && transfer.date <= item.rangeEnd);
       const special = sum(state.ledger.specials || [], expense => expense.date >= item.rangeStart && expense.date <= item.rangeEnd);
       actualAfter += saved - special;
       return {
@@ -30,6 +34,7 @@ Page({
       pocket: formatFen(item.pocketAfter),
       special: item.specialOut ? `专项 −¥${formatFen(item.specialOut)}` : '无专项支出',
       actualAfter: formatFen(actualAfter),
+      sweptText: swept ? `含清理转入 ¥${formatFen(swept)}` : '',
       completed: !!(state.executedPaydays && state.executedPaydays[item.index])
     }; });
     const balances = accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials, state.ledger.adjusts);
@@ -49,9 +54,22 @@ Page({
       pocketNetText: formatFen(netFen), pocketIncomeText: formatFen(incomeFen), pocketSpecialText: formatFen(totals.specialFen),
       // 校准净额可正可负，文案自带符号，避免「¥-0.20」这种双负号。
       pocketAdjustText: totals.adjustFen ? `${totals.adjustFen < 0 ? '−' : '+'} ¥${formatFen(Math.abs(totals.adjustFen))}` : '¥0.00', pocketMatched: netFen === currentFen,
-      periods
+      periods,
+      // 余粮卡片只在“还能写账且真有钱可转”时出现；计划结束后只提示钱还留在余额宝
+      surplusCard: surplus.surplus > 0 && !surplus.blocked ? {
+        amountText: formatFen(surplus.surplus),
+        detail: sweep.describe(surplus),
+        hint: surplus.rangeEnd === surplus.deadline
+          ? `第 ${surplus.periodIndex} 期是最后一期：${surplus.deadline} 之后账本转为只读，余粮请在截止日前转走`
+          : ''
+      } : null,
+      poolLeftoverHint: surplus.blocked === 'ended' && balances[ACCT.POOL2] > 0
+        ? `计划已结束、账本只读：余额宝里还留着 ¥${formatFen(balances[ACCT.POOL2])} 未清理`
+        : ''
     });
   },
+  // 第五步「清理上期结余」：确认后把余额宝用不完的余粮真实转进小荷包
+  sweepSurplus() { sweep.sweepWithConfirm(() => this.refresh()); },
   openPocketLedger() { wx.navigateTo({ url: `/pages/ledger/index?account=${ACCT.POCKET3}` }); },
   inputSpecialReason(event) { this.setData({ specialReason: event.detail.value }); },
   inputSpecialAmount(event) { this.setData({ specialAmount: event.detail.value }); },
