@@ -48,7 +48,10 @@
         <view class="flow-side"><view class="flow-amount {{item.signed > 0 ? 'inflow' : (item.signed < 0 ? 'outflow' : 'neutral')}}">{{item.amountText}}</view></view>
       </view>
     </block>
-    <button class="button secondary" bindtap="openDayLedger">查看这一天全部流水</button>
+    <button wx:if="{{dayDetail.canAllocate}}" class="button secondary day-action" bindtap="allocateSelectedDay">{{dayDetail.allocateText}}</button>
+    <button wx:if="{{dayDetail.canSettle}}" class="button secondary day-action" bindtap="settleSelectedDay">{{dayDetail.settleText}}</button>
+    <view wx:if="{{dayDetail.dayNotice}}" class="caption day-notice">{{dayDetail.dayNotice}}</view>
+    <button class="button secondary day-action" bindtap="openDayLedger">查看这一天全部流水</button>
   </view>
 
   <view class="section-label">五期储蓄轨迹</view>

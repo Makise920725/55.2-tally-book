@@ -14,6 +14,7 @@ const rng = seed => { let s = seed; return () => (s = (s * 1103515245 + 12345) %
 const scenarios = ['省', '中', '松'];
 const cats = ['meal', 'cat', 'daily', 'snack', 'charge'];
 const nextDay = date => { const d = parseDate(date); d.setUTCDate(d.getUTCDate() + 1); return dateKey(d); };
+const shiftDay = (date, delta) => { const d = parseDate(date); d.setUTCDate(d.getUTCDate() + delta); return dateKey(d); };
 
 // 批次口径与 store 内部一致：带 batchKey 的划转只认 batchKey，其余按业务日期落批
 function batchNet(state, range) {
@@ -59,6 +60,14 @@ function soak(seed) {
       store.addExpense({ date, category: cats[Math.floor(rand() * cats.length)], amountYuan: rand() < 0.12 ? 60 + Math.floor(rand() * 40) : 1 + Math.floor(rand() * 50) });
     }
     const settled = store.settleDay({ date });
+    // 10% 概率回到本期更早的某天补划（本期页新增的入口），六成概率顺手把那天的账结掉：
+    // 补划后不结算，钱会半浮在工资卡上，所以两条路径要一起泡。
+    if (rand() < 0.1) {
+      const past = shiftDay(date, -(1 + Math.floor(rand() * 3)));
+      const backfill = store.allocateDay({ date: past });
+      if (backfill.catchUp) catchUps += 1;
+      if (rand() < 0.6) store.settleDay({ date: past });
+    }
     if (settled.transfer && settled.transfer.amount < 0) problems.push(`${date} 退款为负`);
     if (rand() < 0.06) {
       const list = store.getState().ledger.expenses.filter(item => item.amount > 0 && !item.reversalOf);
@@ -96,8 +105,9 @@ function soak(seed) {
 }
 
 test('浸泡：随机漏划额 + 切模式 + 切情景 + 冲正，账本不变量始终成立', () => {
-  // 2932412 是历史上真会撞出“已封账批次被重新归批 + 超退”的剧本，保留成长期回归
-  const results = [7919, 104729, 209458, 2932412, 942561, 418].map(soak);
+  // 2932412 曾撞出“已封账批次被重新归批 + 超退”；245502 曾撞出
+  // “补划没沿用批次钉住的额度 → 封账后工资卡短钱”。两个剧本都保留成长期回归。
+  const results = [7919, 104729, 209458, 2932412, 942561, 245502].map(soak);
   const problems = results.flatMap(item => item.problems);
   assert.ok(results.some(item => item.catchUps > 0), '剧本应当真的走过补划路径');
   assert.ok(results.every(item => item.sealedBatches > 100), '剧本应当封掉足够多的批次');

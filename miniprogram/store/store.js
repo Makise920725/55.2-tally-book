@@ -178,34 +178,49 @@ function markBatchSlots(daySlots, range, values) {
   return next;
 }
 
-function settleDay({ date, dailyBudget } = {}) {
-  const current = getState();
+// 结算的唯一决策口径：settleDay（写入）与 previewSettlement（页面预览）共用，杜绝两套算法。
+function settlementPlan(current, date, budget) {
   // 计划区间外没有额度可退，否则会把整日预算凭空退回余额宝。
   const planBlock = planOperationBlock(current, date);
-  if (planBlock) return { state: current, persisted: true, transfer: null, blocked: planBlock };
-  if (current.daySlots && current.daySlots[date] && current.daySlots[date].closed) return { state: current, persisted: true, transfer: null, alreadyClosed: true };
-  // 兜底必须用当前情景的每日额度，硬编码 CONFIG.dailyBudget 会在“省 / 松”情景下退错钱。
-  const budget = Number.isInteger(dailyBudget) ? dailyBudget : current.config.dailyBudget;
+  if (planBlock) return { blocked: planBlock };
+  if ((current.daySlots || {})[date] && current.daySlots[date].closed) return { alreadyClosed: true };
   const range = resolveBatchRange(current, date);
-  const allocationDate = range.start;
-  const expenseEnd = range.end;
-  const expenseStart = allocationDate;
-  const hasAllocation = current.ledger.transfers.some(item => item.date === allocationDate && item.kind === 'daily_alloc')
-    || Number.isInteger((current.daySlots[allocationDate] || {}).allocated);
-  if (!hasAllocation) return { state: current, persisted: true, transfer: null, blocked: 'not_allocated' };
-  if (range.mode === 'three-day' && date < expenseEnd) {
-    return { state: current, persisted: true, batchPending: true, allocationDate, settlementDate: expenseEnd };
+  if (!hasAllocationRecord(current, range.start)) return { blocked: 'not_allocated', range, allocationDate: range.start };
+  if (range.mode === 'three-day' && date < range.end) {
+    return { batchPending: true, range, allocationDate: range.start, settlementDate: range.end };
   }
   // 余额宝已经为该批次补过的超支额，不能再当成“余粮”退回，否则池子会被扣两次；
   // 撤销封账后重复结算时，也要先扣掉本批次已登记的退款（含冲正补退），否则会重复退回余额宝。
-  const { allocated, covered, refunded: alreadyRefunded, due: amount } = batchNumbers(current, range, budget);
+  const numbers = batchNumbers(current, range, budget);
+  return { range, numbers, allocationDate: range.start, settlementDate: range.end, due: numbers.due };
+}
+
+function settleDay({ date, dailyBudget } = {}) {
+  const current = getState();
+  // 兜底必须用当前情景的每日额度，硬编码 CONFIG.dailyBudget 会在“省 / 松”情景下退错钱。
+  const budget = Number.isInteger(dailyBudget) ? dailyBudget : current.config.dailyBudget;
+  const plan = settlementPlan(current, date, budget);
+  if (plan.blocked) return { state: current, persisted: true, transfer: null, blocked: plan.blocked };
+  if (plan.alreadyClosed) return { state: current, persisted: true, transfer: null, alreadyClosed: true };
+  if (plan.batchPending) return { state: current, persisted: true, batchPending: true, allocationDate: plan.allocationDate, settlementDate: plan.settlementDate };
+  const { range, numbers } = plan;
+  const { allocated, refunded: alreadyRefunded, due: amount } = numbers;
   if (!amount) {
     const daySlots = markBatchSlots(current.daySlots, range, { allocated, closed: true, refunded: alreadyRefunded });
-    return { ...commit({ ...current, daySlots }), transfer: null, alreadyRefunded };
+    return { ...commit({ ...current, daySlots }), transfer: null, alreadyRefunded, range };
   }
   const transfer = createTransfer({ id: uid('refund'), date, from: ACCT.BANK1, to: ACCT.POOL2, amount, kind: 'daily_refund' });
   const daySlots = markBatchSlots(current.daySlots, range, { allocated, closed: true, refunded: alreadyRefunded + amount });
-  return { ...commit({ ...current, daySlots, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }), transfer, alreadyRefunded };
+  return { ...commit({ ...current, daySlots, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }), transfer, alreadyRefunded, range };
+}
+
+// 只读预览：页面要告诉用户“结算这天会退多少”，但不能自己再算一套口径。
+function previewSettlement(date) {
+  const current = getState();
+  const plan = settlementPlan(current, date, current.config.dailyBudget);
+  if (plan.blocked || plan.alreadyClosed || plan.batchPending) return { date, ...plan };
+  const { allocated, spent, covered, refunded, due } = plan.numbers;
+  return { date, range: plan.range, allocationDate: plan.allocationDate, settlementDate: plan.settlementDate, allocated, spent, covered, refunded, due };
 }
 
 function batchKeyOf(range) { return `${range.start}~${range.end}`; }
@@ -349,24 +364,47 @@ function setScenario(scenario, asOfDate = todayKey()) {
 // 划额：一个批次只划一次，金额 = 批次天数 × 当前情景日额度。
 // 三天一结时若首日漏点，批次内后面任意一天都能“补划”：流水仍落在批次首日（业务日期），
 // createdAt 记录真实操作时刻。否则该批次永远划不进钱、settleDay 卡在 not_allocated 封不了账。
-function allocateDay({ date }) {
-  const current = getState();
+// 划额的唯一决策口径：allocateDay（写入）与 previewAllocation（页面预览）共用。
+// 一个批次只划一次；批次首日漏划时允许在本批任意一天补划，流水仍落在批次首日。
+function allocationPlan(current, date) {
   const planBlock = planOperationBlock(current, date);
-  if (planBlock) return { state: current, persisted: true, blocked: planBlock };
-  // 已封账说明本批次已经结算清楚，再点一次会把额度重复划进工资卡。
+  if (planBlock) return { blocked: planBlock };
   const range = resolveBatchRange(current, date);
-  if (batchIsClosed(current, range)) return { state: current, persisted: true, blocked: 'closed' };
-  const existing = current.ledger.transfers.some(item => item.date === range.start && item.kind === 'daily_alloc');
-  if (existing) return { state: current, persisted: true, alreadyAllocated: true, allocationDate: range.start };
-  const amount = plannedBatchBudget(current.config.dailyBudget, range.mode, range);
-  const transfer = createTransfer({ id: uid('alloc'), date: range.start, from: ACCT.POOL2, to: ACCT.BANK1, amount, kind: 'daily_alloc' });
-  // 日槽按整批登记：批次首日拿 allocated，其余各天至少记住自己属于哪个批次（含 batchMode）。
-  const daySlots = markBatchSlots(current.daySlots, range, { allocated: amount });
+  // 已封账说明本批次已经结算清楚，再点一次会把额度重复划进工资卡。
+  if (batchIsClosed(current, range)) return { blocked: 'closed', range };
+  if (current.ledger.transfers.some(item => item.date === range.start && item.kind === 'daily_alloc')) {
+    return { alreadyAllocated: true, range, allocationDate: range.start };
+  }
+  // 补划金额必须沿用该批次已经钉住的额度（plannedBudget）：那几天的超支补差就是按它算的。
+  // 若改用“今天的情景额度”，就会出现「按 ¥63.73 补了差、只划进 ¥55.19」的窟窿，
+  // 封账时工资卡凭空短钱（浸泡测试实测 −8.54）。allocationOf 的取值顺序天然满足这一点。
+  const pinned = allocationOf(current, range, current.config.dailyBudget);
   return {
-    ...commit({ ...current, daySlots, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }),
-    transfer, allocationDate: range.start, spanDays: batchDayCount(range), catchUp: range.start !== date
+    range,
+    amount: pinned,
+    allocationDate: range.start,
+    spanDays: batchDayCount(range),
+    catchUp: range.start !== date,
+    fromPinnedBudget: Number.isInteger(((current.daySlots || {})[range.start] || {}).plannedBudget)
   };
 }
+
+function allocateDay({ date }) {
+  const current = getState();
+  const plan = allocationPlan(current, date);
+  if (plan.blocked) return { state: current, persisted: true, blocked: plan.blocked };
+  if (plan.alreadyAllocated) return { state: current, persisted: true, alreadyAllocated: true, allocationDate: plan.allocationDate };
+  const transfer = createTransfer({ id: uid('alloc'), date: plan.allocationDate, from: ACCT.POOL2, to: ACCT.BANK1, amount: plan.amount, kind: 'daily_alloc' });
+  // 日槽按整批登记：批次首日拿 allocated，其余各天至少记住自己属于哪个批次（含 batchMode）。
+  const daySlots = markBatchSlots(current.daySlots, plan.range, { allocated: plan.amount });
+  return {
+    ...commit({ ...current, daySlots, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, transfer] } }),
+    transfer, allocationDate: plan.allocationDate, spanDays: plan.spanDays, catchUp: plan.catchUp, range: plan.range
+  };
+}
+
+// 只读预览：某天要不要补划、补多少、落在哪一天。
+function previewAllocation(date) { return { date, ...allocationPlan(getState(), date) }; }
 
 // ---- 冲正（追加式更正）：支出与专项共用一套 planner ----
 // 原记录一个字都不改，只追加一条负向记录，落在**原始记录的日期**上，
@@ -557,4 +595,4 @@ function removeCategory(id) {
   return commit({ ...current, categories: current.categories.filter(item => item.id !== id) });
 }
 
-module.exports = { getState, newCategoryId, subscribe, addExpense, reverseExpense, reverseSpecial, reverseEntries, previewReversal, settleDay, reopenDay, togglePaydayStep, executePayday, addSpecial, setMode, setScenario, allocateDay, addCategory, removeCategory, addAdjust, reset, backupMeta, markBackedUp, restoreFromBackup, undoRestore };
+module.exports = { getState, newCategoryId, subscribe, addExpense, previewAllocation, previewSettlement, reverseExpense, reverseSpecial, reverseEntries, previewReversal, settleDay, reopenDay, togglePaydayStep, executePayday, addSpecial, setMode, setScenario, allocateDay, addCategory, removeCategory, addAdjust, reset, backupMeta, markBackedUp, restoreFromBackup, undoRestore };

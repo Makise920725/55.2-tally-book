@@ -75,9 +75,38 @@ Page({
     const actions = events.filter(item => item.type !== 'expense');
     const netFen = expenses.reduce((total, item) => total + item.amountFen, 0);
     const reversedFen = reversals.reduce((total, item) => total + Math.abs(item.amountFen), 0);
+    // 「过去的某天」才给补划/结算入口：store 接受任意业务日期（补记、冲正都需要），
+    // 但页面只能对“已经发生的日子”动手，未来的柱子只提示不写账。
+    // 金额一律取自 store 的 previewAllocation / previewSettlement，页面不自己算第二套口径。
+    const allocation = store.previewAllocation(date);
+    const settlement = store.previewSettlement(date);
+    const isFuture = date > todayKey();
+    const dayClosed = Boolean(((store.getState().daySlots || {})[date] || {}).closed);
+    const canAllocate = !isFuture && !allocation.blocked && !allocation.alreadyAllocated && allocation.amount > 0;
+    const canSettle = !isFuture && !settlement.blocked && !settlement.alreadyClosed && !settlement.batchPending && settlement.due > 0;
+    const dayNotice = isFuture ? '这天还没到，先把当天的账记实'
+      : allocation.blocked === 'ended' ? '计划已于 ' + store.getState().config.deadline + ' 结束，账本只读'
+      : allocation.blocked === 'not_started' ? '计划还没开始'
+      : allocation.blocked === 'closed' || dayClosed ? '本批次已封账；要更正请撤销封账，或走追加式冲正'
+      : settlement.batchPending ? `三天一结：请在 ${settlement.settlementDate} 整批结算`
+      : allocation.alreadyAllocated ? `额度已于 ${allocation.allocationDate} 划入本批次`
+      : settlement.blocked === 'not_allocated' ? '这天还没划额，先补划再结算'
+      : '';
     this.setData({
       dayDetail: {
         date,
+        canAllocate,
+        allocateText: canAllocate
+          ? [
+            allocation.catchUp ? `补划本批次额度 ¥${formatFen(allocation.amount)}（${allocation.spanDays} 天，落在 ${allocation.allocationDate}）`
+              : `补划这天额度 ¥${formatFen(allocation.amount)}`,
+            // 补划沿用该批次当初钉住的额度，可能与今天的情景额度不同，得说清楚
+            allocation.fromPinnedBudget ? '（沿用该批次已记录的额度）' : ''
+          ].join('')
+          : '',
+        canSettle,
+        settleText: canSettle ? `结算这天 · 退回余额宝 ¥${formatFen(settlement.due)}` : '',
+        dayNotice,
         expenseCount: expenses.filter(item => !item.reversal && !item.reversed).length,
         reversalCount: reversals.length,
         expenseTotal: formatFen(netFen),
@@ -87,6 +116,35 @@ Page({
         hasActions: actions.length > 0
       }
     });
+  },
+  // 给历史上漏划额的那天补划：三日批次仍落在批次首日，一个批次只一笔划额。
+  allocateSelectedDay() {
+    const date = this.data.selectedDate;
+    if (!date) return;
+    const result = store.allocateDay({ date });
+    const title = result.blocked === 'closed' ? '本批次已封账，请先撤销封账'
+      : result.blocked === 'ended' ? '计划已结束，账本转为只读'
+      : result.blocked ? '计划还没开始，暂时不能划额'
+      : result.alreadyAllocated ? `额度已于 ${result.allocationDate} 划入`
+      : result.catchUp ? `已补划 ¥${formatFen(result.transfer.amount)}，落在批次首日 ${result.allocationDate}`
+      : `已划入 ¥${formatFen(result.transfer.amount)}`;
+    wx.showToast({ title, icon: 'none' });
+    this.refresh();
+  },
+  // 补划之后必须能结算，否则额度会半浮在工资卡上；口径与今日页晚间结算完全相同。
+  settleSelectedDay() {
+    const date = this.data.selectedDate;
+    if (!date) return;
+    const result = store.settleDay({ date });
+    wx.showToast({
+      title: result.batchPending ? `三天一结，请在 ${result.settlementDate} 整批结算`
+        : result.blocked === 'not_allocated' ? '这天还没划额，先补划额度'
+        : result.alreadyClosed ? '这天已经封账'
+        : result.transfer ? `已退回 ¥${formatFen(result.transfer.amount)}`
+        : '本批次已退完，没有可退余额',
+      icon: 'none'
+    });
+    this.refresh();
   },
   openDayLedger() {
     const date = this.data.selectedDate || todayKey();

@@ -13,5 +13,7 @@
 .daily-dot.refund { border: 1rpx solid var(--ink-2); background: transparent; }
 .group-label { margin: 26rpx 0 6rpx; color: var(--dim); font-size: 22rpx; letter-spacing: 1rpx; }
 .day-empty { margin: 12rpx 0 4rpx; }
+.day-action { margin-top: 14rpx; }
+.day-notice { margin-top: 14rpx; }
 .struck { color: var(--faint); }
 .struck-tag { border-style: dashed; margin-left: 8rpx; }

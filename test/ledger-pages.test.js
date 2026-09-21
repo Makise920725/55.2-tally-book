@@ -47,11 +47,11 @@ function useWx(handlers = {}) {
 }
 
 // 页面用 todayKey() 决定“今天”，测试里冻结本地时间，避免依赖真实日期。
-function freezeNow(handler) {
+function freezeNow(handler, at = [2026, 8, 24, 10, 30, 0]) {
   const RealDate = Date;
   class FakeDate extends RealDate {
-    constructor(...args) { if (args.length) super(...args); else super(2026, 8, 24, 10, 30, 0); }
-    static now() { return new RealDate(2026, 8, 24, 10, 30, 0).getTime(); }
+    constructor(...args) { if (args.length) super(...args); else super(...at); }
+    static now() { return new RealDate(...at).getTime(); }
   }
   global.Date = FakeDate;
   try { return handler(); } finally { global.Date = RealDate; }
@@ -464,3 +464,44 @@ test('CSV 导出走文件通道，剪贴板只在兜底时使用', () => {
   });
 });
 
+
+test('本期页能给历史上漏划额的那天补划，并接着结算闭环；未来的日子只提示不写账', () => {
+  // 今天 = 2026-09-27：09-25 是“过去的某天”，09-30 还没到
+  freezeNow(() => {
+    const { accountBalances } = require('../miniprogram/domain/ledger');
+    const calls = useWx();
+    store.reset();
+    store.executePayday(1, '2026-09-24');
+    store.addExpense({ date: '2026-09-25', category: 'meal', amountYuan: 30 });   // 当天只记支出，没点早间划额
+    const page = mount('../miniprogram/pages/period/index.js');
+    page.onLoad();
+    page.selectDay({ currentTarget: { dataset: { date: '2026-09-25' } } });
+    assert.equal(page.data.dayDetail.canAllocate, true);
+    assert.match(page.data.dayDetail.allocateText, /补划这天额度 ¥55\.19/);
+    assert.equal(page.data.dayDetail.canSettle, false);
+    assert.equal(page.data.dayDetail.dayNotice, '这天还没划额，先补划再结算');
+
+    page.allocateSelectedDay();
+    const allocs = store.getState().ledger.transfers.filter(item => item.kind === 'daily_alloc').map(item => `${item.date}=${item.amount}`);
+    assert.deepEqual(allocs, ['2026-09-25=5519'], '补划落在所选的那一天');
+    assert.equal(page.data.dayDetail.canAllocate, false);
+    assert.equal(page.data.dayDetail.canSettle, true);
+    assert.match(page.data.dayDetail.settleText, /结算这天 · 退回余额宝 ¥25\.19/);
+
+    page.settleSelectedDay();
+    const state = store.getState();
+    assert.equal(state.daySlots['2026-09-25'].closed, true);
+    const balances = accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials, state.ledger.adjusts);
+    assert.equal(balances.BANK1, 0, '补划 + 结算之后工资卡归零，钱不会半浮在卡上');
+    assert.equal(balances.POOL2, 160051 - 5519 + 2519);
+    assert.equal(page.data.dayDetail.canSettle, false);
+    assert.equal(page.data.dayDetail.dayNotice, '本批次已封账；要更正请撤销封账，或走追加式冲正');
+    assert.ok(calls.toast.some(title => title.includes('已退回 ¥25.19')));
+
+    // 未来的日子不给写账入口
+    page.selectDay({ currentTarget: { dataset: { date: '2026-09-30' } } });
+    assert.equal(page.data.dayDetail.canAllocate, false);
+    assert.equal(page.data.dayDetail.canSettle, false);
+    assert.equal(page.data.dayDetail.dayNotice, '这天还没到，先把当天的账记实');
+  }, [2026, 8, 27, 9, 0, 0]);
+});
