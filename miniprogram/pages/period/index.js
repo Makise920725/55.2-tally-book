@@ -4,6 +4,15 @@ const { formatFen } = require('../../domain/money');
 const { ACCT, sum, dailySeries } = require('../../domain/ledger');
 const { buildLedgerEvents, dayStatsByDate } = require('../../domain/ledger-view');
 const store = require('../../store/store');
+const write = require('../../utils/write');
+
+// 补划 / 结算的拒绝原因翻译成人话，与今日页口径一致。
+const BLOCKED_TEXT = {
+  closed: '本批次已封账，请先撤销封账',
+  ended: '计划已结束，账本转为只读',
+  not_started: '计划还没开始',
+  not_allocated: '这天还没划额，先补划额度'
+};
 
 // 柱子缺少流水时的默认值，保证模板里的字段始终存在。
 const EMPTY_STATS = { expenseCount: 0, reversalCount: 0, spent: 0, hasAlloc: false, allocAmount: 0, coverAmount: 0, refundAmount: 0, flowCount: 0 };
@@ -20,7 +29,7 @@ Page({
     const today = todayKey();
     const current = periodForDate(today, periodList);
     // 计划尚未开始或已全部结束时不再展示“本期”，否则会拿第 1 期的数据冒充当前周期。
-    const base = { periods, started: isPlanStarted(today, state.config.startDate), lastEnd: periods.at(-1) ? periods.at(-1).rangeEnd : '', startDate: state.config.startDate };
+    const base = { periods, started: isPlanStarted(today, state.config.startDate), lastEnd: periods.length ? periods[periods.length - 1].rangeEnd : '', startDate: state.config.startDate };
     this.events = [];
     if (!current) { this.setData({ ...base, current: null, selectedDate: '', dayDetail: null }); return; }
     const spent = sum(state.ledger.expenses, item => item.date >= current.rangeStart && item.date <= current.rangeEnd);
@@ -121,29 +130,27 @@ Page({
   allocateSelectedDay() {
     const date = this.data.selectedDate;
     if (!date) return;
+    // 给历史上漏划额的那天补划：三日批次仍落在批次首日，一个批次只一笔划额。
     const result = store.allocateDay({ date });
-    const title = result.blocked === 'closed' ? '本批次已封账，请先撤销封账'
-      : result.blocked === 'ended' ? '计划已结束，账本转为只读'
-      : result.blocked ? '计划还没开始，暂时不能划额'
+    const title = result.blocked ? (BLOCKED_TEXT[result.blocked] || '现在不能补划')
       : result.alreadyAllocated ? `额度已于 ${result.allocationDate} 划入`
       : result.catchUp ? `已补划 ¥${formatFen(result.transfer.amount)}，落在批次首日 ${result.allocationDate}`
       : `已划入 ¥${formatFen(result.transfer.amount)}`;
-    wx.showToast({ title, icon: 'none' });
+    write.notify(result, title);
     this.refresh();
   },
   // 补划之后必须能结算，否则额度会半浮在工资卡上；口径与今日页晚间结算完全相同。
   settleSelectedDay() {
     const date = this.data.selectedDate;
     if (!date) return;
+    // 补划之后必须能结算，否则额度会半浮在工资卡上；口径与今日页晚间结算完全相同。
     const result = store.settleDay({ date });
-    wx.showToast({
-      title: result.batchPending ? `三天一结，请在 ${result.settlementDate} 整批结算`
-        : result.blocked === 'not_allocated' ? '这天还没划额，先补划额度'
-        : result.alreadyClosed ? '这天已经封账'
-        : result.transfer ? `已退回 ¥${formatFen(result.transfer.amount)}`
-        : '本批次已退完，没有可退余额',
-      icon: 'none'
-    });
+    const title = result.batchPending ? `三天一结，请在 ${result.settlementDate} 整批结算`
+      : result.blocked ? (BLOCKED_TEXT[result.blocked] || '现在不能结算')
+      : result.alreadyClosed ? '这天已经封账'
+      : result.transfer ? `已退回 ¥${formatFen(result.transfer.amount)}`
+      : '本批次已退完，没有可退余额';
+    write.notify(result, title);
     this.refresh();
   },
   openDayLedger() {

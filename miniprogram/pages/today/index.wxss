@@ -18,3 +18,7 @@
 .keypad-cancel { padding: 22rpx 0 0; color: var(--dim); text-align: center; font-size: 24rpx; }
 .prestart { padding: 48rpx 32rpx; text-align: center; }
 .flow-more { margin-top: 24rpx; }
+/* 未保存提示：黑白水墨体系里用反白卡片表达「这件事需要你处理」，不引入新色相 */
+.save-error { border-color: var(--ink); background: var(--ink); }
+.save-error .section-title { margin-bottom: 8rpx; color: #fff; }
+.save-error .caption { color: var(--paper); }

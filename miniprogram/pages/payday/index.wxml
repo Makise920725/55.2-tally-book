@@ -1,1 +1,18 @@
-<view class="page"><view class="eyebrow">55块2 · 发薪日 SOP</view><view class="title">发薪日</view><picker mode="selector" range="{{periodOptions}}" value="{{periodIndex - 1}}" bindchange="togglePeriod"><view class="period-picker">{{periodOptions[periodIndex - 1]}}　⌄</view></picker><view wx:if="{{period}}" class="card"><view class="caption">到账日 {{period.payDate}}　·　五步完成，安心进入下一期</view><view wx:for="{{steps}}" wx:key="index" class="sop-row {{item.done ? 'done' : ''}}" data-step="{{item.index}}" bindtap="toggleStep"><view class="check">{{item.done ? '✓' : ''}}</view><view class="sop-copy"><view>{{item.index}}　{{item.name}}</view><view class="secondary-text wx-value">{{item.amount}}</view></view></view><button class="button {{completed ? 'button-complete' : ''}}" style="margin-top: 24rpx;" bindtap="execute">{{completed ? '本期已完成' : '执行五步划转'}}</button><button wx:if="{{canSweep}}" class="button secondary" style="margin-top: 16rpx;" bindtap="sweepSurplus">{{sweepText}}</button></view></view>
+<view class="page">
+  <view class="eyebrow">55块2 · 发薪日 SOP</view>
+  <view class="title">发薪日</view>
+  <view wx:if="{{saveError}}" class="card save-error"><view class="section-title">未保存</view><view class="caption">{{saveError}}</view></view>
+  <picker mode="selector" range="{{periodOptions}}" value="{{periodIndex - 1}}" bindchange="togglePeriod"><view class="period-picker">{{periodOptions[periodIndex - 1]}}　⌄</view></picker>
+  <view wx:if="{{period}}" class="card">
+    <view class="caption">到账日 {{period.payDate}}　·　{{statusText}}</view>
+    <view wx:for="{{steps}}" wx:key="index" class="sop-row {{item.done ? 'done' : ''}} {{item.derived ? 'derived' : ''}}" data-step="{{item.index}}" bindtap="toggleStep">
+      <view class="check">{{item.done ? '✓' : ''}}</view>
+      <view class="sop-copy">
+        <view>{{item.index}}　{{item.name}}<text wx:if="{{item.derived}}" class="derived-tag">真实转账</text></view>
+        <view class="secondary-text wx-value">{{item.amount}}</view>
+      </view>
+    </view>
+    <button class="button {{transferDone ? 'button-complete' : ''}}" style="margin-top: 24rpx;" bindtap="execute">{{allDone ? '本期五步已完成' : transferDone ? '前四步已登记 · 继续第五步' : '执行前四步划转'}}</button>
+    <button wx:if="{{canSweep}}" class="button secondary" style="margin-top: 16rpx;" bindtap="sweepSurplus">{{sweepText}}</button>
+  </view>
+</view>

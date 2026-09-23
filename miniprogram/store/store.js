@@ -1,4 +1,4 @@
-const { createExpense, createExpenseReversal, createTransfer, createSpecial, createSpecialReversal, accountBalances, ACCT } = require('../domain/ledger');
+const { createExpense, createExpenseReversal, createTransfer, createSpecial, createSpecialReversal, accountBalances, sum, ACCT } = require('../domain/ledger');
 const { yuanToFen } = require('../domain/money');
 const { parseDate, dateKey, todayKey } = require('../domain/calendar');
 const { periodsForState, periodForDate, poolSurplus, SCENARIOS } = require('../domain/plan');
@@ -15,11 +15,16 @@ function getState() { if (!state) state = storage.load(); return state; }
 function subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }
 function notify() { listeners.forEach(listener => listener(state)); }
 
+// 写入的唯一出口：先把候选状态落盘，成功之后才替换内存状态并通知页面。
+// 持久化失败时内存保持原样 —— 屏幕上看到的账本和存下来的账本永远是同一份，
+// 不会再出现「提示已记账、重启小程序这笔账就没了」。页面必须处理 persisted:false 并提示失败。
 function commit(next) {
+  const previous = state === null ? getState() : state;
+  const result = storage.persist(next);
+  if (!result.ok) return { state: previous, persisted: false, error: result.error || 'persist-failed' };
   state = next;
-  const result = storage.persist(state);
   notify();
-  return { state, persisted: result.ok };
+  return { state, persisted: true };
 }
 
 // 期次是派生数据：改情景、执行发薪日之后都必须按“当前情景 + 已执行流水”重算，
@@ -36,15 +41,36 @@ function planOperationBlock(current, date) {
   return null;
 }
 
+// 金额只有一个换算入口：调用方给原始「元」值，由 domain/money.yuanToFen 负责取整，
+// 页面不再自己 Math.round(x * 100)，避免 1.005、指数形式在不同入口取整口径不一致。
+function toFenOrNull(value) {
+  if (value === undefined || value === null || value === '') return null;
+  try { const fen = yuanToFen(value); return Number.isInteger(fen) ? fen : null; } catch (error) { return null; }
+}
+
+// 记账金额必须是正整数分；非法（空、非数字、0、负数、超两位小数的怪值）一律返回 null 由调用方提示。
+function amountToFen(value) {
+  const fen = toFenOrNull(value);
+  return fen !== null && fen > 0 ? fen : null;
+}
+
+const chars = text => Array.from(text);
+const CATEGORY_NAME_LIMIT = 12;
+const CATEGORY_MARK_LIMIT = 2;
+const ADJUST_ACCOUNTS = [ACCT.BANK1, ACCT.POOL2, ACCT.POCKET3, ACCT.BILL, ACCT.OUT];
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function addExpense({ date, category, amountYuan, note = '' }) {
   const current = getState();
   const planBlock = planOperationBlock(current, date);
   if (planBlock) return { state: current, persisted: true, blocked: planBlock };
+  const amountFen = amountToFen(amountYuan);
+  if (amountFen === null) return { state: current, persisted: true, blocked: 'bad_amount' };
   const range = resolveBatchRange(current, date);
   if (batchIsClosed(current, range)) {
     return { state: current, persisted: true, blocked: 'closed' };
   }
-  const expense = createExpense({ id: uid('expense'), date, category, amount: yuanToFen(amountYuan), note });
+  const expense = createExpense({ id: uid('expense'), date, category, amount: amountFen, note });
   const { start, end } = range;
   const beforeSpent = sumExpensesBetween(current.ledger.expenses, start, end);
   const afterSpent = beforeSpent + expense.amount;
@@ -265,16 +291,42 @@ function reopenDay(date) {
 
 function reset() {
   // 重置演示数据同样是破坏性操作：先把当前账本留进可撤销槽位，误点还能救回来。
-  storage.saveRollback(getState());
-  state = storage.seed();
-  storage.persist(state);
-  notify();
-  return state;
+  const current = getState();
+  storage.saveRollback(current);
+  // 写不进本机存储就不换内存状态：否则页面显示「已恢复初始数据」，重启又回到旧账本。
+  return commit(storage.seed());
 }
 
-function togglePaydayStep(periodIndex, step) {
+// ---- 发薪日 SOP 五步 ----
+// 前四步由「执行五步划转」一次性登记；第五步「清理上期结余」是真金白银的 carry_over 跨账户转账，
+// 它的完成状态一律由流水派生：只打个勾不代表钱进了小荷包。
+function periodSweptFen(current, periodIndex) {
+  const period = (current.periods || [])[periodIndex - 1];
+  if (!period) return 0;
+  return sum(current.ledger.transfers, item => item.kind === 'carry_over' && item.date >= period.rangeStart && item.date <= period.rangeEnd);
+}
+
+function isPaydayStepDone(current, periodIndex, step) {
+  const index = Number(step);
+  if (index === 5) return periodSweptFen(current, periodIndex) > 0;
+  return Boolean((current.paydaySteps || {})[`${periodIndex}-${index}`]);
+}
+
+// 页面统一取这份状态：transferDone 是前四步划转，allDone 才是「五步全部完成」。
+function paydayStepStatus(current, periodIndex) {
+  const done = [1, 2, 3, 4, 5].map(step => isPaydayStepDone(current, periodIndex, step));
+  return { done, transferDone: done.slice(0, 4).every(Boolean), sweptFen: periodSweptFen(current, periodIndex), allDone: done.every(Boolean) };
+}
+
+function togglePaydayStep(periodIndex, step, asOfDate = todayKey()) {
   const current = getState();
-  const key = `${periodIndex}-${step}`;
+  const index = Number(step);
+  // 第五步不给手勾/手取消：想让它完成就真实转一次余粮。
+  if (index === 5) return { state: current, persisted: true, blocked: 'derived_step' };
+  // 计划结束后账本只读：SOP 勾选属于历史留痕，同样不再可改。
+  const planBlock = planOperationBlock(current, asOfDate);
+  if (planBlock) return { state: current, persisted: true, blocked: planBlock };
+  const key = `${periodIndex}-${index}`;
   const paydaySteps = { ...(current.paydaySteps || {}), [key]: !(current.paydaySteps || {})[key] };
   return commit({ ...current, paydaySteps });
 }
@@ -290,6 +342,8 @@ function setMode(mode, asOfDate = todayKey()) {
   if (mode !== 'daily' && mode !== 'three-day') throw new TypeError('mode must be daily or three-day');
   const current = getState();
   if (mode === current.mode) return { state: current, persisted: true, unchanged: true };
+  // 结算模式决定批次口径，属于计划参数：截止日后账本转为只读，不再允许改模式。
+  if (planOperationBlock(current, asOfDate) === 'ended') return { state: current, persisted: true, blocked: 'ended' };
   if (!planOperationBlock(current, asOfDate)) {
     const currentBatch = batchRange(asOfDate, 'three-day');
     if (current.mode === 'three-day') {
@@ -311,11 +365,23 @@ function setMode(mode, asOfDate = todayKey()) {
   return commit({ ...current, mode });
 }
 
+// 余额校准是「追加一条真实余额修正」，不参与批次额度核算，因此口径单列：
+// - 计划开始之前：允许（期初对账本来就要在开工前录好）；
+// - 计划期间：正常校准；
+// - 截止日之后：仍然允许，但打上 postPlan 标记，页面明确它是「回顾期校准」。
+// 账户、日期、金额非法时拒绝并返回 blocked，不再把异常抛给页面。
 function addAdjust({ date, acct, realBalanceYuan, bookBalanceYuan, note = '' }) {
-  const realBalance = yuanToFen(realBalanceYuan);
-  const bookBalance = yuanToFen(bookBalanceYuan);
-  const adjust = { id: uid('adjust'), date, acct, realBalance, bookBalance, diff: realBalance - bookBalance, note, createdAt: new Date().toISOString() };
   const current = getState();
+  if (!DATE_ONLY_RE.test(String(date || '')) || !ADJUST_ACCOUNTS.includes(acct)) {
+    return { state: current, persisted: true, blocked: 'bad_account' };
+  }
+  const realBalance = toFenOrNull(realBalanceYuan);
+  const bookBalance = toFenOrNull(bookBalanceYuan);
+  if (realBalance === null || bookBalance === null || realBalance < 0 || bookBalance < 0) {
+    return { state: current, persisted: true, blocked: 'bad_amount' };
+  }
+  const adjust = { id: uid('adjust'), date, acct, realBalance, bookBalance, diff: realBalance - bookBalance, note, createdAt: new Date().toISOString() };
+  if (date > current.config.deadline) adjust.postPlan = true;
   return commit({ ...current, ledger: { ...current.ledger, adjusts: [...current.ledger.adjusts, adjust] } });
 }
 
@@ -325,6 +391,10 @@ function executePayday(periodIndex = 1, asOfDate = todayKey()) {
   const period = current.periods[periodIndex - 1];
   if (!period) throw new RangeError('unknown payday period');
   const date = period.payDate;
+  // 计划截止日后账本转为只读：不得再补登任何一期发薪日。
+  // 缺了这道检查，结束之后仍能凭空登记未执行的工资流水，
+  // 与支出、专项、划额、结算、清理、情景切换共用的「结束后只读」规则冲突。
+  if (planOperationBlock(current, asOfDate) === 'ended') return { state: current, persisted: true, blocked: 'ended', payDate: date };
   // 发薪日之前不允许预登记，避免把未来工资提前算进余额。
   if (date > asOfDate) return { state: current, persisted: true, blocked: 'not_reached', payDate: date };
   const transfers = [
@@ -334,7 +404,9 @@ function executePayday(periodIndex = 1, asOfDate = todayKey()) {
     createTransfer({ id: `save_${periodIndex}`, date, from: ACCT.BANK1, to: ACCT.POCKET3, amount: period.saveToPocket, kind: 'payday_save' })
   ];
   const paydaySteps = { ...current.paydaySteps };
-  for (let step = 1; step <= 5; step += 1) paydaySteps[`${periodIndex}-${step}`] = true;
+  // 只登记前四步。第五步「清理余粮」是另一笔真实转账（carry_over），完成状态由流水派生，
+  // 在这里顺手打勾会让 SOP 状态和真实转账脱钩。
+  for (let step = 1; step <= 4; step += 1) paydaySteps[`${periodIndex}-${step}`] = true;
   return commit(refreshPeriods({ ...current, paydaySteps, executedPaydays: { ...current.executedPaydays, [periodIndex]: true }, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, ...transfers] } }));
 }
 
@@ -342,7 +414,11 @@ function addSpecial({ date, reason, amountYuan, note = '' }) {
   const current = getState();
   const planBlock = planOperationBlock(current, date);
   if (planBlock) return { state: current, persisted: true, blocked: planBlock };
-  const special = createSpecial({ id: uid('special'), date, reason, amount: yuanToFen(amountYuan), note });
+  const title = typeof reason === 'string' ? reason.trim() : '';
+  if (!title) return { state: current, persisted: true, blocked: 'bad_reason' };
+  const amountFen = amountToFen(amountYuan);
+  if (amountFen === null) return { state: current, persisted: true, blocked: 'bad_amount' };
+  const special = createSpecial({ id: uid('special'), date, reason: title, amount: amountFen, note });
   return commit({ ...current, ledger: { ...current.ledger, specials: [...(current.ledger.specials || []), special] } });
 }
 
@@ -431,7 +507,15 @@ function planReversal(current, entry, asOfDate) {
   const info = reversibleInfo(current, source, entry.id);
   if (info.blocked) return { blocked: info.blocked, source };
   const { original, reversedFen, remainingFen } = info;
-  const portion = Number.isInteger(entry.amountFen) ? entry.amountFen : remainingFen;
+  // 部分冲正的金额：amountFen（整数分，内部调用）或 amountYuan（原始字符串，页面输入）二选一，
+  // 换算只走 domain/money 一处；两者都没给就是整笔冲正。
+  const hasFen = entry.amountFen !== undefined && entry.amountFen !== null;
+  const hasYuan = entry.amountYuan !== undefined && entry.amountYuan !== null && entry.amountYuan !== '';
+  let portion = remainingFen;
+  if (hasFen || hasYuan) {
+    const parsed = hasFen ? entry.amountFen : toFenOrNull(entry.amountYuan);
+    portion = Number.isInteger(parsed) ? parsed : NaN;
+  }
   if (!Number.isInteger(portion) || portion <= 0 || portion > remainingFen) {
     return { blocked: 'bad_amount', source, remainingFen, reversedFen };
   }
@@ -534,17 +618,14 @@ function singleResult(result, source) {
 }
 
 // 不传 amountYuan 就整笔冲正；传了就只冲这一部分（累计不得超过原始金额）。
+// 不传 amountYuan 就整笔冲正；传了就只冲这一部分（累计不得超过原始金额）。
+// 页面把键盘里的原始字符串直接交进来，换算统一由领域层负责。
 function reverseExpense({ id, amountYuan, asOfDate = todayKey() } = {}) {
-  return singleResult(reverseEntries({ entries: [{ source: 'expenses', id, amountFen: toFenOrNull(amountYuan) }], asOfDate }), 'expenses');
+  return singleResult(reverseEntries({ entries: [{ source: 'expenses', id, amountYuan }], asOfDate }), 'expenses');
 }
 
 function reverseSpecial({ id, amountYuan, asOfDate = todayKey() } = {}) {
-  return singleResult(reverseEntries({ entries: [{ source: 'specials', id, amountFen: toFenOrNull(amountYuan) }], asOfDate }), 'specials');
-}
-
-function toFenOrNull(value) {
-  if (value === undefined || value === null || value === '') return undefined;
-  try { return yuanToFen(value); } catch (error) { return NaN; }
+  return singleResult(reverseEntries({ entries: [{ source: 'specials', id, amountYuan }], asOfDate }), 'specials');
 }
 
 // ---- 备份与恢复：换机不再靠手动重录 ----
@@ -558,17 +639,13 @@ function markBackedUp() {
   return backupMeta();
 }
 
-// 恢复是整体替换：先把当前账本存进可撤销槽位，再写入新账本；
-// 任何一步写不进去都立刻退回原状，绝不留半套状态。
+// 恢复是整体替换：先把当前账本存进可撤销槽位，再写入新账本。
+// commit 是「先落盘、后换内存」的，所以任何一步写不进去，内存和磁盘都还是原账本，绝不留半套状态。
 function restoreFromBackup(nextState) {
   const current = getState();
   if (!storage.saveRollback(current).ok) return { ok: false, error: 'rollback-failed' };
   const result = commit(storage.migrate(nextState));
-  if (!result.persisted) {
-    const previous = storage.readRollback();
-    if (previous) commit(previous.state);
-    return { ok: false, error: 'persist-failed', state: getState() };
-  }
+  if (!result.persisted) return { ok: false, error: 'persist-failed', state: getState() };
   storage.writeMeta({ lastRestoreAt: new Date().toISOString() });
   return { ok: true, state: result.state, meta: backupMeta() };
 }
@@ -623,8 +700,16 @@ function newCategoryId() { return uid('category'); }
 
 function addCategory({ id, name, mark }) {
   const current = getState();
-  if (!id || !name || current.categories.some(item => item.id === id)) return { state: current, persisted: true, blocked: 'duplicate' };
-  return commit({ ...current, categories: [...current.categories, { id, name, mark: mark || name.slice(0, 1), custom: true }] });
+  const title = typeof name === 'string' ? name.trim() : '';
+  const letters = chars(title);
+  const symbol = (typeof mark === 'string' ? mark.trim() : '') || letters.slice(0, 1).join('');
+  if (!id || !title || letters.length > CATEGORY_NAME_LIMIT || chars(symbol).length > CATEGORY_MARK_LIMIT) {
+    return { state: current, persisted: true, blocked: 'invalid' };
+  }
+  if (current.categories.some(item => item.id === id)) return { state: current, persisted: true, blocked: 'duplicate' };
+  // 同名分类会在筛选、统计和导出里被误当成同一类：去重按 trim 后的名称，而不只是按 id。
+  if (current.categories.some(item => String(item.name).trim() === title)) return { state: current, persisted: true, blocked: 'duplicate_name' };
+  return commit({ ...current, categories: [...current.categories, { id, name: title, mark: symbol, custom: true }] });
 }
 
 function removeCategory(id) {
@@ -633,4 +718,4 @@ function removeCategory(id) {
   return commit({ ...current, categories: current.categories.filter(item => item.id !== id) });
 }
 
-module.exports = { getState, newCategoryId, subscribe, addExpense, previewAllocation, previewSettlement, previewPoolSurplus, sweepPoolSurplus, reverseExpense, reverseSpecial, reverseEntries, previewReversal, settleDay, reopenDay, togglePaydayStep, executePayday, addSpecial, setMode, setScenario, allocateDay, addCategory, removeCategory, addAdjust, reset, backupMeta, markBackedUp, restoreFromBackup, undoRestore };
+module.exports = { getState, newCategoryId, subscribe, addExpense, previewAllocation, previewSettlement, previewPoolSurplus, sweepPoolSurplus, reverseExpense, reverseSpecial, reverseEntries, previewReversal, settleDay, reopenDay, togglePaydayStep, isPaydayStepDone, paydayStepStatus, periodSweptFen, executePayday, addSpecial, setMode, setScenario, allocateDay, addCategory, removeCategory, addAdjust, reset, backupMeta, markBackedUp, restoreFromBackup, undoRestore };

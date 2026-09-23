@@ -2,6 +2,8 @@
 // CSV 是给人看的单向导出（分类名、账户中文名、方向），丢了 daySlots、期初余额、已执行发薪日等结算依据，
 // 用它恢复会静默改变退款与补差口径。所以备份走 JSON 全量，恢复前强制校验。
 const { SCHEMA_VERSION } = require('./storage');
+const { ACCT } = require('../domain/ledger');
+const { SCENARIOS, derivePeriods } = require('../domain/plan');
 
 const BACKUP_FORMAT = 'tally-book-backup';
 const BACKUP_FORMAT_VERSION = 1;
@@ -90,6 +92,107 @@ function validateState(state, problems) {
   }
 }
 
+// ---- 账务不变量校验：结构合法不等于账本可用 ----
+// 结构校验只管「能不能读」；下面这层管「读进来会不会把派生逻辑带偏」：
+// 账户集合、划转方向、kind 白名单、批次身份互不重叠、已执行发薪日与流水一致……
+// 这些一旦坏了，余额、退款、余粮都会算错，所以恢复前一律拒绝，让人去修备份而不是将错就错。
+const ACCOUNTS = Object.freeze([ACCT.BANK1, ACCT.POOL2, ACCT.POCKET3, ACCT.BILL, ACCT.OUT]);
+const TRANSFER_KINDS = Object.freeze(['payday_income', 'bill_repay', 'payday_budget', 'payday_save', 'daily_alloc', 'overspend_cover', 'daily_refund', 'carry_over']);
+const MODES = Object.freeze(['daily', 'three-day']);
+const PERIOD_COUNT = 5;
+const MAX_NOTE_LENGTH = 500;
+const NON_NEGATIVE_INT = ['allocated', 'plannedBudget', 'refunded'];
+
+function batchOf(slots, key) {
+  const slot = slots[key] || {};
+  return slot.batchStart && slot.batchEnd ? { start: slot.batchStart, end: slot.batchEnd } : null;
+}
+
+function validateInvariants(state, problems) {
+  const ledger = state.ledger || {};
+  (ledger.transfers || []).forEach(item => {
+    if (item.from && !ACCOUNTS.includes(item.from)) problems.push(`transfers ${item.id} 的来源账户 ${item.from} 不在账本账户集合里`);
+    if (item.to && !ACCOUNTS.includes(item.to)) problems.push(`transfers ${item.id} 的去向账户 ${item.to} 不在账本账户集合里`);
+    if (item.from && item.from === item.to) problems.push(`transfers ${item.id} 的转入转出是同一个账户`);
+    if (item.kind && !TRANSFER_KINDS.includes(item.kind)) problems.push(`transfers ${item.id} 的划转类型 ${item.kind} 无法识别`);
+    if (item.batchKey !== undefined && typeof item.batchKey !== 'string') problems.push(`transfers ${item.id} 的批次标识必须是字符串`);
+  });
+  (ledger.expenses || []).forEach(item => {
+    if (item.account && !ACCOUNTS.includes(item.account)) problems.push(`expenses ${item.id} 的账户 ${item.account} 不在账本账户集合里`);
+  });
+  (ledger.specials || []).forEach(item => {
+    if (item.from && !ACCOUNTS.includes(item.from)) problems.push(`specials ${item.id} 的来源账户 ${item.from} 不在账本账户集合里`);
+    if (item.to && !ACCOUNTS.includes(item.to)) problems.push(`specials ${item.id} 的去向账户 ${item.to} 不在账本账户集合里`);
+  });
+  (ledger.adjusts || []).forEach(item => {
+    if (item.acct && !ACCOUNTS.includes(item.acct)) problems.push(`adjusts ${item.id} 的账户 ${item.acct} 不在账本账户集合里`);
+    if (Number.isInteger(item.realBalance) && Number.isInteger(item.bookBalance) && item.diff !== item.realBalance - item.bookBalance) {
+      problems.push(`adjusts ${item.id} 的差额与两项余额对不上`);
+    }
+  });
+  ['expenses', 'transfers', 'specials', 'adjusts'].forEach(key => (ledger[key] || []).forEach(item => {
+    ['note', 'reason'].forEach(field => {
+      if (typeof item[field] === 'string' && item[field].length > MAX_NOTE_LENGTH) problems.push(`${key} ${item.id} 的${field === 'note' ? '备注' : '名称'}过长`);
+    });
+  }));
+
+  // 缺字段留给 storage.migrate 补齐默认值；只有「明明写了却认不出」才算坏数据。
+  if (state.mode !== undefined && !MODES.includes(state.mode)) problems.push(`结算模式 ${state.mode} 无法识别`);
+  const scenario = (state.config || {}).scenario;
+  if (scenario !== undefined && !Object.prototype.hasOwnProperty.call(SCENARIOS, scenario)) problems.push(`预算情景 ${scenario} 无法识别`);
+  const config = state.config || {};
+  if (DATE_RE.test(config.startDate || '') && DATE_RE.test(config.deadline || '') && config.startDate > config.deadline) {
+    problems.push(`计划起始日 ${config.startDate} 晚于截止日 ${config.deadline}`);
+  }
+
+  const slots = state.daySlots || {};
+  Object.keys(slots).forEach(key => {
+    if (!DATE_RE.test(key)) { problems.push(`daySlots 的键 ${key} 不是合法日期`); return; }
+    const slot = slots[key];
+    if (!isPlainObject(slot)) { problems.push(`daySlots ${key} 不是对象`); return; }
+    ['closed', 'reopened'].forEach(field => { if (slot[field] !== undefined && typeof slot[field] !== 'boolean') problems.push(`daySlots ${key}.${field} 必须是布尔值`); });
+    NON_NEGATIVE_INT.forEach(field => { if (slot[field] !== undefined && (!Number.isInteger(slot[field]) || slot[field] < 0)) problems.push(`daySlots ${key}.${field} 必须是非负整数分`); });
+    const batch = batchOf(slots, key);
+    if (!batch) {
+      if (slot.batchStart || slot.batchEnd) problems.push(`daySlots ${key} 的批次起止不完整`);
+      return;
+    }
+    if (!DATE_RE.test(batch.start) || !DATE_RE.test(batch.end) || batch.start > batch.end) problems.push(`daySlots ${key} 的批次范围不合法`);
+    else if (key < batch.start || key > batch.end) problems.push(`daySlots ${key} 落在自己批次范围 ${batch.start}→${batch.end} 之外`);
+    if (slot.batchMode !== undefined && !MODES.includes(slot.batchMode)) problems.push(`daySlots ${key}.batchMode 无法识别`);
+  });
+  // 一天只属于一个批次：两个批次区间重叠就意味着补差/退款会被两套口径各算一次。
+  const identities = [...new Set(Object.keys(slots).map(key => {
+    const batch = batchOf(slots, key);
+    return batch ? `${batch.start}~${batch.end}` : '';
+  }).filter(Boolean))].map(text => { const [start, end] = text.split('~'); return { start, end }; });
+  identities.forEach((left, index) => identities.slice(index + 1).forEach(right => {
+    if (left.start <= right.end && right.start <= left.end && (left.start !== right.start || left.end !== right.end)) {
+      problems.push(`批次 ${left.start}→${left.end} 与 ${right.start}→${right.end} 互相重叠`);
+    }
+  }));
+
+  const incomeByDate = new Set((ledger.transfers || []).filter(item => item.kind === 'payday_income').map(item => item.date));
+  Object.keys(state.executedPaydays || {}).forEach(key => {
+    if (!/^[1-9][0-9]*$/.test(key) || Number(key) > PERIOD_COUNT) { problems.push(`已执行发薪日的期次 ${key} 不存在`); return; }
+    if (!state.executedPaydays[key]) return;
+    const period = derivePeriods()[Number(key) - 1];
+    if (!period) { problems.push(`已执行发薪日的期次 ${key} 不存在`); return; }
+    if (!incomeByDate.has(period.payDate)) problems.push(`第 ${key} 期标记为已执行，但 ${period.payDate} 没有工资到账流水`);
+  });
+  Object.keys(state.paydaySteps || {}).forEach(key => {
+    const matched = /^([1-9][0-9]*)-([1-9][0-9]*)$/.exec(key);
+    if (!matched || Number(matched[1]) > PERIOD_COUNT || Number(matched[2]) > PERIOD_COUNT) problems.push(`发薪日步骤 ${key} 不属于五期 × 五步`);
+    else if (typeof state.paydaySteps[key] !== 'boolean') problems.push(`发薪日步骤 ${key} 必须是布尔值`);
+  });
+  if (state.categories !== undefined && (!Array.isArray(state.categories)
+    || state.categories.some(item => !isPlainObject(item) || !item.id || !item.name))) {
+    problems.push('categories 里有缺少 id 或名称的分类');
+  }
+}
+
+// 备份里的 state.periods 一律不作为事实来源：期次是纯派生数据，
+// 恢复时由 storage.migrate() 按「当前情景 + 已执行流水」重算，所以这里既不校验也不信任它。
 // 返回 { ok, state, meta, problems }：任何一条问题都不允许恢复。
 function parseBackupText(text) {
   if (typeof text !== 'string' || !text.trim()) return { ok: false, problems: ['内容为空'] };
@@ -103,6 +206,8 @@ function parseBackupText(text) {
   }
   const problems = [];
   validateState(parsed.state, problems);
+  // 结构没问题再查账务不变量：派生余额、批次退款、发薪期次全靠这些前提成立。
+  if (!problems.length) validateInvariants(parsed.state, problems);
   if (problems.length) return { ok: false, problems: problems.slice(0, 8), totalProblems: problems.length };
   return { ok: true, state: parsed.state, meta: { exportedAt: parsed.exportedAt, app: parsed.app, counts: parsed.counts } };
 }

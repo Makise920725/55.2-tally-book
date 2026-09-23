@@ -5,8 +5,16 @@ const { buildLedgerEvents, accountBalanceFromEvents, summarizeEvents } = require
 const sweep = require('../../utils/sweep');
 const { todayKey } = require('../../domain/calendar');
 const store = require('../../store/store');
+const write = require('../../utils/write');
 
 const PREVIEW_LIMIT = 8;
+// 专项支出的拒绝原因翻译成人话：store 是唯一裁决者。
+const BLOCKED_TEXT = {
+  ended: '计划已结束，不能再登记专项',
+  not_started: '计划还没开始',
+  bad_reason: '请填写专项名称',
+  bad_amount: '金额要填数字，最多两位小数'
+};
 
 Page({
   data: {
@@ -39,7 +47,7 @@ Page({
     }; });
     const balances = accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials, state.ledger.adjusts);
     const currentFen = balances[ACCT.POCKET3];
-    const targetFen = periods.at(-1).pocketAfter;
+    const targetFen = periods[periods.length - 1].pocketAfter;
     // “小荷包余额由哪些流水组成”：逐笔合计与派生余额必须一致，不一致就直接显示差额，避免只看总数猜。
     const pocketEvents = buildLedgerEvents(state, { account: ACCT.POCKET3, perspective: ACCT.POCKET3 });
     const netFen = accountBalanceFromEvents(pocketEvents, ACCT.POCKET3, state.openingBalances ? state.openingBalances[ACCT.POCKET3] : 0);
@@ -76,8 +84,8 @@ Page({
   saveSpecial() {
     if (!this.data.specialReason || !this.data.specialAmount) { wx.showToast({ title: '请填写专项名称和金额', icon: 'none' }); return; }
     const result = store.addSpecial({ date: todayKey(), reason: this.data.specialReason, amountYuan: this.data.specialAmount });
-    if (result.blocked) { wx.showToast({ title: result.blocked === 'ended' ? '计划已结束，不能再登记专项' : '计划尚未开始', icon: 'none' }); return; }
-    this.setData({ specialReason: '', specialAmount: '' });
-    wx.showToast({ title: '专项支出已记录', icon: 'none' });
+    if (result.blocked) { write.notifyBlocked(result, BLOCKED_TEXT, '现在不能登记专项'); return; }
+    // 落盘成功才清空输入；写失败时保留原文，让用户原样重试。
+    if (write.notify(result, '专项支出已记录')) this.setData({ specialReason: '', specialAmount: '' });
   }
 });

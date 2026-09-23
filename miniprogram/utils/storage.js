@@ -18,6 +18,12 @@ function migrate(state) {
   next.categories = next.categories || require('../domain/plan').DEFAULT_CATEGORIES;
   next.daySlots = next.daySlots || {};
   next.paydaySteps = next.paydaySteps || {};
+  // 第五步「清理上期结余」的完成状态改由真实 carry_over 流水派生：
+  // 旧版本执行发薪日时顺手打上的 *-5 勾全部丢弃，不让恢复后的账本继续谎报「五步完成」。
+  next.paydaySteps = Object.keys(next.paydaySteps).reduce((acc, key) => {
+    if (!/-5$/.test(key)) acc[key] = next.paydaySteps[key];
+    return acc;
+  }, {});
   next.executedPaydays = next.executedPaydays || {};
   // 期次是纯派生数据，每次装载都重算：缓存里带着一份旧情景的期次（例如换过预算情景、
   // 或恢复了一份 periods 为空/陈旧的备份）会让页面失去期次依据、算错目标。

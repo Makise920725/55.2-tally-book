@@ -8,7 +8,7 @@
 - 五期数字校验、五个 Tab 页面 + 全量流水页
 - 预算情景（省/中/松）切换：已执行期次以流水为准，未执行期次与储蓄目标重算
 - 划额可补：批次首日漏划能在本批任意一天补上，历史上漏划的那天也能从本期页明细补划并结算
-- 发薪日第五步「清理上期结余」：把余额宝用不完的余粮按确认转进小荷包（carry_over）
+- 发薪日第五步「清理上期结余」：把余额宝用不完的余粮按确认转进小荷包（carry_over）；第五步是否完成只看这笔真实流水
 - 本地导出（CSV / ICS）、JSON 备份与恢复、金额校准、追加式冲正（部分/批量）
 - Git 版本控制
 
@@ -171,3 +171,68 @@ npm test
 - 一天只属于一个批次：批次身份（`batchStart/batchEnd/batchMode`）一旦登记，切换结算模式或事后改动历史都不会把它并进别的批次。
 - 冲正/补退只追加流水，不改写历史：`batchNumbers` 是 `settleDay`、`reopenDay`、`reverseExpense` 共用的批次结算口径
   （额度、净支出、已补差、已退款、应退余额），避免出现第二套退款算法。
+
+## 2026-09-23 code review 修复（写入一致性与只读生命周期）
+
+对照 `CODE_REVIEW_2026-09-23.md` 逐条动工，测试从 125 条增至 171 条。
+
+### 1. 写入先落盘、后换内存（P1）
+
+`store.commit()` 是全部写入口的唯一出口，顺序改成「先把候选状态持久化 → 成功才替换内存状态并通知页面」。
+持久化失败时内存账本保持原样，只返回 `{ persisted: false }`：
+**屏幕上看到的账本与存下来的账本永远是同一份**，不再出现「提示已记账、重启小程序这笔账就没了」。
+
+- 新增 `utils/write.js`：`notify(result, 成功文案)` 与 `persistFailed(result)`。页面一律经它收尾，
+  只有真落盘才清空输入框；今日页/发薪日页额外留一条反白「未保存」横幅，直到下一次写入成功才消失。
+- `test/persistence.test.js` 把 **16 个写入口**（含恢复、撤销恢复、重置）逐个换成「写不进去的存储」，
+  断言 `persisted === false` 且内存账本逐字节不变。
+- 备份导出只有在真走通一个出口时才 `markBackedUp()`，全链路不可用时不推进「上次备份」时间。
+
+### 2. 计划只读生命周期：一张表说清（P1 + P2）
+
+`executePayday()` 补上截止日检查（此前 `2027-02-06` 仍能登记第 5 期工资，凭空写入未执行的流水）。
+截止日（`2027-02-05`）之后的可写能力现在明确分三档：
+
+| 能力 | 截止日后 | 理由 |
+| --- | --- | --- |
+| 计划流水：支出、专项、划额、结算、撤销封账、余粮清理、冲正、发薪日登记 | 禁止（`blocked: 'ended'`） | 历史账务状态不得继续被改动 |
+| 计划参数：预算情景、结算模式、SOP 前四步勾选 | 禁止 | 会改写期次口径与历史留痕 |
+| 余额校准 | 允许，写入时打 `postPlan` 标记，流水页/CSV 标注「回顾期校准」 | 校准是追加式的真实余额修正，期末对账本来就需要 |
+| 分类管理（新增/删除未使用的） | 允许 | 只是标签整理，不动任何历史金额 |
+
+- `togglePaydayStep()` 新增截止日检查，并**拒绝手勾第五步**（`blocked: 'derived_step'`）。
+- 校准入口补输入校验：账户必须在已知账户集合内、日期必须 `YYYY-MM-DD`、金额必须是非负整数分，
+  非法输入返回 `blocked` 而不是把异常抛给页面。
+
+### 3. 第五步完成状态改由流水派生（P2）
+
+`executePayday()` 只自动登记前四步；第五步「清理上期结余」的完成状态一律来自该期次内真实存在的
+`carry_over` 划转（`store.periodSweptFen / isPaydayStepDone / paydayStepStatus`）。
+发薪日页区分 `transferDone`（前四步已登记）与 `allDone`（五步真完成），
+`storage.migrate()` 会丢弃旧版本残留的 `*-5` 勾，避免恢复后继续谎报「五步完成」。
+
+### 4. 视图统计口径统一（P1）
+
+`groupEventsByDate()` 的日头小计改成带符号净额，与 `summarizeEvents()`、`dayStatsByDate()` 同一口径：
+专项 ¥10 全额冲正后日头是 `支出 ¥0.00`（不再出现「专项 ¥20.00」的翻倍），
+净额为负时写成 `−¥10.00`，不会叠出两个负号。
+
+### 5. 导出降级链与能力检测（P2）
+
+`utils/file.js` 重写为显式链路：**写文件 → 发送文件 → 打开文档 → 剪贴板 → 明确失败**，
+每一环先 `typeof wx.xxx === 'function'` 再调用（`openDocument` 不存在时不再抛 `TypeError`），
+完成回调经 `once()` 保证最多触发一次（真机上 `success` 之后还会来 `complete`）。
+
+### 6. 备份两层校验 + 输入与兼容（P2 / P3）
+
+- `utils/backup.js` 在结构校验之上加「账务不变量校验」：账户白名单、划转不能自己转给自己、
+  `kind` 白名单、批次身份不能重叠且日期必须落在自己批次范围内、`allocated/plannedBudget/refunded`
+  非负整数、`closed/reopened` 布尔、`config.startDate <= deadline`、`mode/scenario` 可识别、
+  `executedPaydays` 必须有对应工资到账流水、`paydaySteps` 只能是五期×五步的布尔值、备注长度上限。
+  缺字段的老备份仍然放行，交给 `storage.migrate()` 补默认值。
+- 自定义分类按 **trim 后的名称**去重（`duplicate_name`），拒绝空白名/超长名/超长标记，标记按字素截取。
+- 元→分只有 `domain/money.yuanToFen` 一处：`reverseExpense/reverseSpecial` 收原始字符串，
+  流水页部分冲正不再自己 `Math.round(amount * 100)`（`1.005 元` 统一得 101 分）。
+- 兼容底线：`test/input-and-compat.test.js` 扫全部小程序源码，禁止出现 `String.replaceAll` 与 `Array.at(-n)`；
+  ICS 改用 `split('-').join('')`。`test/timezone.test.js` 用子进程分别在 `Asia/Shanghai / UTC / America/New_York`
+  下跑同一时刻，钉住「本地墙钟的今天」与创建时间的时区渲染。

@@ -4,6 +4,7 @@ const { ACCT } = require('../../domain/ledger');
 const { buildLedgerEvents, summarizeEvents, groupEventsByDate, accountLabel } = require('../../domain/ledger-view');
 const { periodForDate } = require('../../domain/plan');
 const store = require('../../store/store');
+const write = require('../../utils/write');
 
 const RANGE_OPTIONS = [
   { key: 'all', label: '全部' },
@@ -247,8 +248,9 @@ Page({
         if (!result.confirm) return;
         const done = store.reverseEntries({ entries, asOfDate: todayKey() });
         if (done.blocked) { wx.showToast({ title: REVERSE_BLOCKED_TEXT[done.blocked] || '冲正失败，未改动任何流水', icon: 'none' }); return; }
-        this.setData({ selectionMode: false, selected: {}, selectedCount: 0, batchSummary: null });
-        wx.showToast({ title: done.summary.trueUpFen ? `已冲正 ${done.summary.count} 笔，并补退 ¥${formatFen(done.summary.trueUpFen)}` : `已冲正 ${done.summary.count} 笔`, icon: 'none' });
+        // 写不进本机存储就不算冲正成功：选择状态保留，让用户原样重试。
+        const saved = write.notify(done, done.summary.trueUpFen ? `已冲正 ${done.summary.count} 笔，并补退 ¥${formatFen(done.summary.trueUpFen)}` : `已冲正 ${done.summary.count} 笔`);
+        if (saved) this.setData({ selectionMode: false, selected: {}, selectedCount: 0, batchSummary: null });
       }
     });
   },
@@ -260,15 +262,18 @@ Page({
   },
   noop() {},
   inputPartial(event) { this.setData({ partialAmount: event.detail.value }); },
-  // 部分冲正：只冲 entered 的金额，剩余可冲额由 store 把关。
+  // 部分冲正：只冲输入框里那一小部分，剩余可冲额由 store 把关。
   reversePartial(event) {
     const id = event.currentTarget.dataset.id;
     const source = event.currentTarget.dataset.source || 'expenses';
     const remaining = event.currentTarget.dataset.remaining;
-    const amount = Number(this.data.partialAmount);
+    const input = String(this.data.partialAmount || '').trim();
+    const amount = Number(input);
     if (!Number.isFinite(amount) || amount <= 0) { wx.showToast({ title: '请输入要冲正的金额', icon: 'none' }); return; }
     if (amount > Number(remaining)) { wx.showToast({ title: `最多还能冲 ¥${remaining}`, icon: 'none' }); return; }
-    this.runReversal([{ id, source, amountFen: Math.round(amount * 100) }], `冲正这笔中的 ¥${amount.toFixed(2)}`, true);
+    // 原始字符串直接交给 store：元→分只有 domain/money 一个口径，页面不再自己乘 100，
+    // 否则 1.005、超长小数在不同入口会取整成不同的钱。
+    this.runReversal([{ id, source, amountYuan: input }], `冲正这笔中的 ¥${amount.toFixed(2)}`, true);
   },
   runReversal(entries, title, partial) {
     const today = todayKey();
@@ -287,9 +292,8 @@ Page({
       success: result => {
         if (!result.confirm) return;
         const done = store.reverseEntries({ entries, asOfDate: today });
-        if (done.blocked) { wx.showToast({ title: REVERSE_BLOCKED_TEXT[done.blocked] || '暂时不能冲正', icon: 'none' }); return; }
-        this.setData({ partialAmount: '' });
-        wx.showToast({ title: done.summary.trueUpFen ? `已冲正，并补退 ¥${formatFen(done.summary.trueUpFen)}` : '已冲正', icon: 'none' });
+        if (done.blocked) { wx.showToast({ title: REVERSE_BLOCKED_TEXT[done.blocked] || '冲正失败，未改动任何流水', icon: 'none' }); return; }
+        if (write.notify(done, done.summary.trueUpFen ? `已冲正，并补退 ¥${formatFen(done.summary.trueUpFen)}` : '已冲正')) this.setData({ partialAmount: '' });
       }
     });
   },

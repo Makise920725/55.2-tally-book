@@ -7,6 +7,21 @@ const { exportPaydayIcs } = require('../../utils/ics');
 const { buildLedgerEvents } = require('../../domain/ledger-view');
 const backup = require('../../utils/backup');
 const fileExport = require('../../utils/file');
+const write = require('../../utils/write');
+
+// 设置页写入口的拒绝原因：只读边界、输入校验、分类冲突都得说得清楚。
+const BLOCKED_TEXT = {
+  ended: '计划已结束，账本转为只读',
+  not_started: '计划还没开始',
+  batch_boundary: '请在新三日批次首日切换',
+  active_batch: '当前批次未结算',
+  bad_account: '请选择要校准的账户',
+  bad_amount: '余额只能填数字，最多两位小数',
+  invalid: '分类名称不合法：1-12 个字，标记最多 2 个字符',
+  duplicate: '这个分类已经存在',
+  duplicate_name: '已经有同名分类了',
+  used: '已使用的分类不能删除'
+};
 
 Page({
   data: { config: null, expenseCount: 0, eventCount: 0, backupView: null, mode: 'daily', acct: 'BANK1', acctIndex: 0, accountIds: ['BANK1', 'POOL2', 'POCKET3'], accountOptions: ['工资卡 ①', '余额宝 ②', '小荷包 ③'], realBalance: '', bookBalance: '', adjustNote: '', categoryName: '', categoryMark: '', categories: [] },
@@ -15,7 +30,7 @@ Page({
   onUnload() { if (this.unsubscribe) this.unsubscribe(); },
   refresh() {
     const state = store.getState();
-    const lastPeriod = state.periods && state.periods.length ? state.periods.at(-1) : null;
+    const lastPeriod = state.periods && state.periods.length ? state.periods[state.periods.length - 1] : null;
     this.setData({
       config: {
         ...state.config,
@@ -55,7 +70,12 @@ Page({
     fileExport.deliverText({
       fileName: backup.backupFileName(fileExport.fileStamp()),
       content: text, fileType: 'json', label: '备份', preferShare: true,
-      done: () => { store.markBackedUp(); this.refresh(); }
+      // 只有真走通一个出口（发送文件 / 打开文档 / 剪贴板）才算备份完成；
+      // 全链路都不可用时不能把「上次备份」时间往前推，否则用户以为已经留了快照。
+      done: channel => {
+        if (channel) store.markBackedUp();
+        this.refresh();
+      }
     });
   },
   restoreFromFile() {
@@ -144,12 +164,9 @@ Page({
         if (!result.confirm) return;
         const changed = store.setScenario(scenario, todayKey());
         this.refresh();
-        if (changed.blocked) {
-          wx.showToast({ title: changed.blocked === 'ended' ? '计划已结束，账本转为只读' : '计划尚未开始，暂不能调整情景', icon: 'none' });
-          return;
-        }
+        if (changed.blocked) { write.notifyBlocked(changed, BLOCKED_TEXT, '现在不能调整预算情景'); return; }
         const replanned = changed.replanned.length ? `重算 ${changed.replanned.map(index => `第 ${index} 期`).join('、')}` : '五期均已按流水锁定';
-        wx.showToast({ title: `已切换到 ${scenario} · ${replanned}`, icon: 'none' });
+        write.notify(changed, `已切换到 ${scenario} · ${replanned}`);
       }
     });
   },
@@ -157,35 +174,40 @@ Page({
   toggleMode(event) {
     const mode = event.detail.value ? 'three-day' : 'daily';
     const result = store.setMode(mode, todayKey());
-    if (!result.blocked) return;
+    if (result.blocked) {
+      this.refresh();
+      const title = result.blocked === 'active_batch' ? `当前批次未结算，请于 ${result.settlementDate} 结算后切换` : (BLOCKED_TEXT[result.blocked] || '现在不能切换结算模式');
+      wx.showToast({ title, icon: 'none' });
+      return;
+    }
     this.refresh();
-    const title = result.blocked === 'batch_boundary'
-      ? '请在新三日批次首日切换'
-      : `当前批次未结算，请于 ${result.settlementDate} 结算后切换`;
-    wx.showToast({ title, icon: 'none' });
+    if (result.unchanged) return;
+    write.notify(result, mode === 'three-day' ? '已切换为三天一结' : '已切换为每日一结');
   },
   inputReal(event) { this.setData({ realBalance: event.detail.value }); },
   inputBook(event) { this.setData({ bookBalance: event.detail.value }); },
   inputNote(event) { this.setData({ adjustNote: event.detail.value }); },
   saveAdjust() {
     if (this.data.realBalance === '' || this.data.bookBalance === '') { wx.showToast({ title: '请填写两项余额', icon: 'none' }); return; }
-    store.addAdjust({ date: todayKey(), acct: this.data.acct, realBalanceYuan: this.data.realBalance, bookBalanceYuan: this.data.bookBalance, note: this.data.adjustNote });
+    const result = store.addAdjust({ date: todayKey(), acct: this.data.acct, realBalanceYuan: this.data.realBalance, bookBalanceYuan: this.data.bookBalance, note: this.data.adjustNote });
+    if (result.blocked) { write.notifyBlocked(result, BLOCKED_TEXT, '现在不能记录校准'); return; }
+    if (!write.notify(result, '校准已记录')) return;
     this.setData({ realBalance: '', bookBalance: '', adjustNote: '' });
-    wx.showToast({ title: '校准已记录', icon: 'none' });
   },
   inputCategoryName(event) { this.setData({ categoryName: event.detail.value }); },
   inputCategoryMark(event) { this.setData({ categoryMark: event.detail.value }); },
   addCategory() {
     if (!this.data.categoryName) { wx.showToast({ title: '请输入分类名称', icon: 'none' }); return; }
     const result = store.addCategory({ id: store.newCategoryId(), name: this.data.categoryName, mark: this.data.categoryMark });
-    if (result.blocked) { wx.showToast({ title: '分类已存在', icon: 'none' }); return; }
-    this.setData({ categoryName: '', categoryMark: '' });
+    if (result.blocked) { write.notifyBlocked(result, BLOCKED_TEXT, '分类保存失败'); return; }
+    if (write.notify(result, '分类已添加')) this.setData({ categoryName: '', categoryMark: '' });
   },
   removeCategory(event) {
     const result = store.removeCategory(event.currentTarget.dataset.id);
-    wx.showToast({ title: result.blocked ? '已使用的分类不能删除' : '分类已删除', icon: 'none' });
+    if (result.blocked) { write.notifyBlocked(result, BLOCKED_TEXT, '这个分类删不掉'); return; }
+    write.notify(result, '分类已删除');
   },
   resetData() {
-    wx.showModal({ title: '重置演示数据', content: '将清除本机流水和勾选状态，恢复初始计划。', confirmText: '确认重置', success: result => { if (result.confirm) { store.reset(); wx.showToast({ title: '已恢复初始数据', icon: 'none' }); } } });
+    wx.showModal({ title: '重置演示数据', content: '将清除本机流水和勾选状态，恢复初始计划。', confirmText: '确认重置', success: result => { if (result.confirm) write.notify(store.reset(), '已恢复初始数据'); } });
   }
 });

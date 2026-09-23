@@ -3,6 +3,7 @@
 const store = require('../store/store');
 const { formatFen } = require('../domain/money');
 const { todayKey } = require('../domain/calendar');
+const write = require('./write');
 
 function describe(preview) {
   return '余额宝 ¥' + formatFen(preview.poolBalance) + '，第 ' + preview.periodIndex + ' 期剩余 ' + preview.remainingDays
@@ -38,9 +39,10 @@ function sweepWithConfirm(onDone) {
     success: result => {
       if (!result.confirm) return;
       const swept = store.sweepPoolSurplus({ asOfDate: date });
-      if (swept.blocked) wx.showToast({ title: '计划已结束，账本转为只读', icon: 'none' });
+      if (swept.blocked) wx.showToast({ title: swept.blocked === 'ended' ? '计划已结束，账本转为只读' : '现在不能清理余粮', icon: 'none' });
       else if (swept.skipped) wx.showToast({ title: '已经没有可清理的余粮了', icon: 'none' });
-      else wx.showToast({ title: '已转入小荷包 ¥' + formatFen(swept.swept), icon: 'none' });
+      // 只有真的落盘才说「已转入小荷包」：第五步的完成状态正是由这条 carry_over 流水派生的。
+      else write.notify(swept, '已转入小荷包 ¥' + formatFen(swept.swept));
       if (onDone) onDone(swept);
     }
   });

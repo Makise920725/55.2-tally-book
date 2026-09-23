@@ -4,9 +4,19 @@ const { ACCT, remainingDailyBudget } = require('../../domain/ledger');
 const { buildLedgerEvents, summarizeEvents } = require('../../domain/ledger-view');
 const { formatFen } = require('../../domain/money');
 const store = require('../../store/store');
+const write = require('../../utils/write');
+
+// 写入口的拒绝原因统一翻译成人话；store 是唯一裁决者，页面只负责说清楚。
+const BLOCKED_TEXT = {
+  closed: '今天已封账，可先撤销封账',
+  ended: '计划已结束，账本转为只读',
+  not_started: '计划还没开始',
+  bad_amount: '金额要填数字，最多两位小数',
+  not_allocated: '本批次还没有划额，先点上面的早间划额'
+};
 
 Page({
-  data: { dailyBudget: formatFen(CONFIG.dailyBudget), remaining: formatFen(CONFIG.dailyBudget), deadline: CONFIG.deadline, amount: '', keypadAmount: '0', selectedCategory: 'meal', selectedCategoryName: '吃饭', categories: [], entries: [], summary: null, keyRows: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'delete'], keyboardVisible: false, closed: false, started: false, ended: false, active: false, daysToStart: 0, persisted: true },
+  data: { dailyBudget: formatFen(CONFIG.dailyBudget), remaining: formatFen(CONFIG.dailyBudget), deadline: CONFIG.deadline, amount: '', keypadAmount: '0', selectedCategory: 'meal', selectedCategoryName: '吃饭', categories: [], entries: [], summary: null, keyRows: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'delete'], keyboardVisible: false, closed: false, started: false, ended: false, active: false, daysToStart: 0, saveError: '' },
   onLoad() {
     this.unsubscribe = store.subscribe(() => this.refresh());
     this.refresh();
@@ -50,50 +60,52 @@ Page({
   closeKeyboard() { this.setData({ keyboardVisible: false }); },
   addExpense() {
     if (!this.data.active) { wx.showToast({ title: this.data.ended ? `计划已于 ${CONFIG.deadline} 结束` : `计划将于 ${CONFIG.startDate} 开始`, icon: 'none' }); return; }
-    const amount = Number(this.data.keypadAmount);
+    const raw = String(this.data.keypadAmount || '').trim();
+    const amount = Number(raw);
     if (!Number.isFinite(amount) || amount <= 0) {
       wx.showToast({ title: '请输入金额', icon: 'none' });
       return;
     }
-    const result = store.addExpense({ date: todayKey(), category: this.data.selectedCategory, amountYuan: amount });
+    const result = store.addExpense({ date: todayKey(), category: this.data.selectedCategory, amountYuan: raw });
     if (result.blocked) {
       this.setData({ keyboardVisible: false });
-      const title = result.blocked === 'closed' ? '今天已封账，可先撤销封账' : (result.blocked === 'ended' ? '计划已经结束' : '计划尚未开始');
-      wx.showToast({ title, icon: 'none' });
+      write.notifyBlocked(result, BLOCKED_TEXT, '现在不能记这笔');
       return;
     }
-    this.setData({ amount: '', keypadAmount: '0', keyboardVisible: false, persisted: result.persisted });
+    // 只有真的落盘才清空输入、才说「已记一笔」：存储写失败时内存状态没变，原样留着让用户重试。
     // 补差金额取 store 回传的真实值：批次额度以当天实际划入为准，改过预算情景也不会报错数字。
-    wx.showToast({ title: result.coverFen ? `已记一笔，补差 ¥${formatFen(result.coverFen)}` : '已记一笔', icon: 'none' });
+    const saved = write.notify(result, result.coverFen ? `已记一笔，补差 ¥${formatFen(result.coverFen)}` : '已记一笔');
+    this.setData(saved ? { amount: '', keypadAmount: '0', keyboardVisible: false, saveError: '' } : { saveError: write.PERSIST_FAILED });
   },
   settleDay() {
     if (!this.data.active) { wx.showToast({ title: this.data.ended ? `计划已于 ${CONFIG.deadline} 结束` : `计划将于 ${CONFIG.startDate} 开始`, icon: 'none' }); return; }
     // 不传 dailyBudget，让 store 用当前情景的每日额度兜底，避免“省/松”情景退错钱。
     const result = store.settleDay({ date: todayKey() });
-    wx.showToast({
-      title: result.batchPending ? `三天一结，请在 ${result.settlementDate} 结算`
-        : result.blocked === 'not_allocated' ? '本批次还没划额，先点上面的早间划额'
-        : result.alreadyClosed ? '今天已经封账'
-        : result.transfer ? `已退回 ¥${formatFen(result.transfer.amount)}`
-        : '本批次已退完，没有可退余额',
-      icon: 'none'
-    });
+    const title = result.batchPending ? `三天一结，请在 ${result.settlementDate} 结算`
+      : result.blocked ? (BLOCKED_TEXT[result.blocked] || '现在不能结算')
+      : result.alreadyClosed ? '今天已经封账'
+      : result.transfer ? `已退回 ¥${formatFen(result.transfer.amount)}`
+      : '本批次已退完，没有可退余额';
+    this.setSaveError(result);
+    write.notify(result, title);
   },
   allocateDay() {
     if (!this.data.active) { wx.showToast({ title: this.data.ended ? `计划已于 ${CONFIG.deadline} 结束` : `计划将于 ${CONFIG.startDate} 开始`, icon: 'none' }); return; }
     const result = store.allocateDay({ date: todayKey() });
     const short = date => String(date).slice(5);
-    const title = result.blocked === 'closed' ? '今天已封账，请先撤销封账'
-      : result.blocked === 'ended' ? '计划已经结束'
-      : result.blocked ? `计划将于 ${CONFIG.startDate} 开始`
+    const title = result.blocked ? (BLOCKED_TEXT[result.blocked] || '现在不能划额')
       : result.alreadyAllocated ? `本批次已于 ${short(result.allocationDate)} 划入`
       : result.catchUp ? `已补划 ¥${formatFen(result.transfer.amount)}（${result.spanDays} 天额度，落在批次首日 ${short(result.allocationDate)}）`
       : `已划入 ¥${formatFen(result.transfer.amount)}`;
-    wx.showToast({ title, icon: 'none' });
+    this.setSaveError(result);
+    write.notify(result, title);
   },
   openLedger() { wx.navigateTo({ url: `/pages/ledger/index?date=${todayKey()}&range=day` }); },
   reopenDay() {
     const result = store.reopenDay(todayKey());
-    wx.showToast({ title: result.reversedRefund ? `已撤销封账，退回的 ¥${formatFen(result.reversedRefund)} 也已撤销` : '已撤销封账', icon: 'none' });
-  }
+    this.setSaveError(result);
+    write.notify(result, result.reversedRefund ? `已撤销封账，退回的 ¥${formatFen(result.reversedRefund)} 也已撤销` : '已撤销封账');
+  },
+  // 存储写失败是全局状态：横幅留在页面上，直到下一次写入成功才消失。
+  setSaveError(result) { this.setData({ saveError: write.persistFailed(result) ? write.PERSIST_FAILED : '' }); },
 });

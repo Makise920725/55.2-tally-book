@@ -107,7 +107,8 @@ function finalize(event, perspective) {
     ...event,
     reversal,
     exactTime,
-    typeLabel: reversal ? (event.type === 'special' ? '专项冲正' : '支出冲正') : TYPE_LABELS[event.type],
+    typeLabel: reversal ? (event.type === 'special' ? '专项冲正' : '支出冲正')
+      : (event.type === 'adjust' && event.postPlan) ? '回顾期校准' : TYPE_LABELS[event.type],
     kindLabel: reversal ? (event.type === 'special' ? '专项冲正' : '支出冲正')
       : event.type === 'transfer' ? (KIND_LABELS[event.kind] || event.kind || '账户划转') : TYPE_LABELS[event.type],
     flowText: flow,
@@ -270,7 +271,7 @@ function buildLedgerEvents(state, options = {}) {
       createdAtText,
       type: 'adjust',
       kind: 'adjust',
-      title: '余额校准',
+      title: item.postPlan ? '回顾期校准' : '余额校准',
       subtitle: book && real ? `${acctName}　账面 ¥${book} → 真实 ¥${real}` : `${acctName} 校准`,
       amountFen: item.diff || 0,
       from: null,
@@ -280,6 +281,8 @@ function buildLedgerEvents(state, options = {}) {
       categoryName: '',
       note: item.note || '',
       source: 'adjusts',
+      // 截止日后的校准属于回顾期口径，单独标出来，避免被误读成计划期间的日常校准。
+      postPlan: Boolean(item.postPlan),
       raw: item
     }, perspective));
   });
@@ -330,7 +333,15 @@ function dayStatsByDate(events) {
   return stats;
 }
 
+// 组头金额文案：净额可以为负（例如筛选区间只圈进冲正记录），符号必须一次成型，
+// 不能再出现「¥-10.00」这种两个负号叠在一起的写法。
+function signedAmountText(fen) {
+  return fen < 0 ? `−¥${formatFen(-fen)}` : `¥${formatFen(fen)}`;
+}
+
 // 按业务日期分组，用于流水页的日头 + 当日小计。
+// 小计一律用带符号净额，与 summarizeEvents / dayStatsByDate 同一口径：
+// 专项全额冲正后组头应显示净额 0 并隐藏专项段，而不是按绝对值翻倍成 ¥20.00。
 function groupEventsByDate(events) {
   const groups = [];
   const index = new Map();
@@ -345,12 +356,12 @@ function groupEventsByDate(events) {
     group.count += 1;
     if (event.type === 'expense') group.expenseFen += event.amountFen;
     if (event.reversalOf) group.reversalCount += 1;
-    if (event.type === 'special') group.specialFen += Math.abs(event.amountFen);
+    if (event.type === 'special') group.specialFen += event.amountFen;
   });
   // 组头一句「支出 ¥x · 专项 ¥y」，让扫一眼日期就知道当天发生了什么量级的事。
   groups.forEach(group => {
-    const parts = [`支出 ¥${formatFen(group.expenseFen)}`];
-    if (group.specialFen) parts.push(`专项 ¥${formatFen(group.specialFen)}`);
+    const parts = [`支出 ${signedAmountText(group.expenseFen)}`];
+    if (group.specialFen) parts.push(`专项 ${signedAmountText(group.specialFen)}`);
     group.expenseText = parts.join(' · ');
   });
   return groups;
@@ -360,5 +371,5 @@ module.exports = {
   TYPE_LABELS, KIND_LABELS, ACCOUNT_LABELS,
   buildLedgerEvents, compareEvents, formatCreatedAt, accountLabel, accountName,
   eventEffectOn, accountBalanceFromEvents, touchesAccount, summarizeEvents,
-  dayStatsByDate, groupEventsByDate
+  dayStatsByDate, groupEventsByDate, signedAmountText
 };

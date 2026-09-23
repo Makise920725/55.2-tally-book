@@ -212,3 +212,45 @@ test('CSV 转义与表头不丢列，金额保留两位小数', () => {
   assert.ok(lines[1].includes('15.00'));
   assert.ok(csv.startsWith('\ufeff'));
 });
+
+// ---- P1 回归：日头小计、合计、柱状图必须是同一个「带符号净额」口径 ----
+// 冲正记录是负向流水：曾经日头按绝对值累加，专项 ¥10 全额冲正后标题写成「专项 ¥20.00」，
+// 而同一页的合计却是对的 0，两套口径同时出现在一块屏幕上。
+function specialScenario(reverseYuan) {
+  useMemoryStorage();
+  store.reset();
+  store.addSpecial({ date: '2026-09-24', reason: 'Q4 水电', amountYuan: 10 });
+  const id = store.getState().ledger.specials[0].id;
+  store.reverseSpecial(reverseYuan === undefined ? { id, asOfDate: '2026-09-24' } : { id, amountYuan: reverseYuan, asOfDate: '2026-09-24' });
+  return store.getState();
+}
+
+test('专项全额冲正后日头小计归零，不再按绝对值翻倍', () => {
+  const state = specialScenario();
+  const events = buildLedgerEvents(state);
+  const groups = groupEventsByDate(events);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].specialFen, 0, '净额必须是 0');
+  assert.equal(groups[0].expenseText, '支出 ¥0.00', '净额为 0 就不该再挂一段专项');
+  assert.equal(summarizeEvents(events).specialFen, 0);
+  assert.equal(dayStatsByDate(events)['2026-09-24'].specialFen, 0);
+  const balances = accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials, state.ledger.adjusts);
+  assert.equal(balances[ACCT.POCKET3], 0, '小荷包余额同样回到原状');
+  assert.equal(groups[0].count, 2, '两笔记录都还在，只是净额抵消');
+});
+
+test('专项部分冲正后日头显示剩余净额，与合计一致', () => {
+  const state = specialScenario(4);
+  const events = buildLedgerEvents(state);
+  const group = groupEventsByDate(events)[0];
+  assert.equal(group.specialFen, 600);
+  assert.equal(group.expenseText, '支出 ¥0.00 · 专项 ¥6.00');
+  assert.equal(summarizeEvents(events).specialFen, group.specialFen, '组头与合计不能两套口径');
+});
+
+test('组头净额为负时只有一个负号，不会出现 ¥-10.00', () => {
+  const { signedAmountText } = require('../miniprogram/domain/ledger-view');
+  assert.equal(signedAmountText(0), '¥0.00');
+  assert.equal(signedAmountText(1000), '¥10.00');
+  assert.equal(signedAmountText(-1000), '−¥10.00');
+});

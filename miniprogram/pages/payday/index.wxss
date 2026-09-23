@@ -7,3 +7,8 @@
 .wx-value { margin-top: 5rpx; }
 .button-complete { background: var(--paper); color: var(--ink); border: 1rpx solid var(--line); }
 .period-picker { margin-bottom: 20rpx; padding: 22rpx 28rpx; border: 1rpx solid var(--line); border-radius: 18rpx; background: var(--card); color: var(--ink-2); }
+/* 第五步不可手勾：标记它来自真实流水，勾不在这里点 */
+.derived-tag { margin-left: 12rpx; padding: 2rpx 12rpx; border: 1rpx solid var(--rule); border-radius: 999rpx; color: var(--dim); font-size: 20rpx; }
+.save-error { border-color: var(--ink); background: var(--ink); }
+.save-error .section-title { margin-bottom: 8rpx; color: #fff; }
+.save-error .caption { color: var(--paper); }
