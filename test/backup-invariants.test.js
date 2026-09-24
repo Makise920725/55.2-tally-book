@@ -75,9 +75,16 @@ test('划转类型必须认识，否则余额派生会漏算这一笔', () => {
   const allocIndex = JSON.parse(text).state.ledger.transfers.findIndex(item => item.kind === 'daily_alloc');
   ['payday_income', 'bill_repay', 'payday_budget', 'payday_save', 'daily_alloc', 'overspend_cover', 'daily_refund', 'carry_over']
     .forEach(kind => {
+      // 生活费到账有固定金额/日期口径，单独在下面验证，不能拿一笔划额流水改个名字蒙混。
       const parsed = backup.parseBackupText(tamper(text, o => { o.state.ledger.transfers[allocIndex].kind = kind; }));
       assert.equal(parsed.ok, true, `${kind} 应被放行：${(parsed.problems || []).join(' | ')}`);
     });
+  // 生活费到账：金额固定 2,000、必须落在本期区间，且不能写成同一天的工资
+  const allowanceIndex = JSON.parse(text).state.ledger.transfers.findIndex(item => item.kind === 'allowance_income');
+  assert.ok(allowanceIndex >= 0, '真实账本里应当有生活费到账流水');
+  reject(tamper(text, o => { o.state.ledger.transfers[allowanceIndex].amount = 199900; }), /生活费金额必须是 ¥2,000\.00/);
+  reject(tamper(text, o => { o.state.ledger.transfers[allowanceIndex].date = '2027-03-01'; }), /生活费到账日不在第 1 期|生活费到账日/);
+  reject(tamper(text, o => { o.state.ledger.transfers.push({ ...o.state.ledger.transfers[allowanceIndex], id: 'allow_dup', amount: 200000 }); }), /登记了 2 笔生活费/);
 });
 
 test('批次身份不能重叠、不能把日子甩在批次外', () => {
@@ -106,7 +113,8 @@ test('已执行发薪日必须有对应的工资到账流水', () => {
 
 test('SOP 勾选只能是五期 × 五步的布尔值', () => {
   const text = richBackupText();
-  reject(tamper(text, o => { o.state.paydaySteps = { '1-9': true }; }), /不属于五期 × 五步/);
+  reject(tamper(text, o => { o.state.paydaySteps = { '1-9': true }; }), /不属于五期 × 六步/);
+  assert.equal(backup.parseBackupText(tamper(text, o => { o.state.paydaySteps = { '1-6': true }; })).ok, true, '历史勾最多到第六步');
   reject(tamper(text, o => { o.state.paydaySteps = { '2-3': 'done' }; }), /必须是布尔值/);
 });
 

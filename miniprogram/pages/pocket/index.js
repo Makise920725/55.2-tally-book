@@ -32,8 +32,10 @@ Page({
     let actualAfter = 0;
     const periods = (state.periods || derivePeriods()).map(item => {
       const swept = sum(state.ledger.transfers, transfer => transfer.kind === 'carry_over' && transfer.date >= item.rangeStart && transfer.date <= item.rangeEnd);
-      // 第五步转进来的余粮算“已经存下”；但计划列仍只按 payday_save 派生，否则一笔钱会被数两次。
-      const saved = sum(state.ledger.transfers, transfer => (transfer.kind === 'payday_save' && transfer.date === item.payDate) || transfer.kind === 'carry_over' && transfer.date >= item.rangeStart && transfer.date <= item.rangeEnd);
+      // 清理余粮转进来的钱算“已经存下”；但计划列仍只按 payday_save 派生，否则一笔钱会被数两次。
+      // 两段到账后 payday_save 可能落在生活费日（28 日），不能再按 payDate 过滤：
+      // 统一按「期次 + 落在本期区间」统计，工资日与生活费日的转存都不会漏。
+      const saved = sum(state.ledger.transfers, transfer => ((transfer.kind === 'payday_save' && (transfer.periodIndex === item.index || (!transfer.periodIndex && transfer.date >= item.rangeStart && transfer.date <= item.rangeEnd)))) || (transfer.kind === 'carry_over' && transfer.date >= item.rangeStart && transfer.date <= item.rangeEnd));
       const special = sum(state.ledger.specials || [], expense => expense.date >= item.rangeStart && expense.date <= item.rangeEnd);
       actualAfter += saved - special;
       return {
@@ -43,7 +45,12 @@ Page({
       special: item.specialOut ? `专项 −¥${formatFen(item.specialOut)}` : '无专项支出',
       actualAfter: formatFen(actualAfter),
       sweptText: swept ? `含清理转入 ¥${formatFen(swept)}` : '',
-      completed: !!(state.executedPaydays && state.executedPaydays[item.index])
+      completed: Boolean(item.fullyFunded),
+      lockedText: item.fullyFunded ? '已按实际流水锁定' : '',
+      // 两段到账：只登记了工资的期次不算完成，轨迹上明确写出还差哪一笔。
+      statusText: item.fullyFunded ? '已完成'
+        : item.salaryReceived ? '待生活费 ¥' + formatFen(item.allowance)
+        : '待登记工资'
     }; });
     const balances = accountBalances(state.ledger.transfers, state.ledger.expenses, state.openingBalances, state.ledger.specials, state.ledger.adjusts);
     const currentFen = balances[ACCT.POCKET3];
@@ -76,7 +83,7 @@ Page({
         : ''
     });
   },
-  // 第五步「清理上期结余」：确认后把余额宝用不完的余粮真实转进小荷包
+  // 第六步「清理上期结余」：确认后把余额宝用不完的余粮真实转进小荷包
   sweepSurplus() { sweep.sweepWithConfirm(() => this.refresh()); },
   openPocketLedger() { wx.navigateTo({ url: `/pages/ledger/index?account=${ACCT.POCKET3}` }); },
   inputSpecialReason(event) { this.setData({ specialReason: event.detail.value }); },

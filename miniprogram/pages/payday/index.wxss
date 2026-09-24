@@ -12,3 +12,6 @@
 .save-error { border-color: var(--ink); background: var(--ink); }
 .save-error .section-title { margin-bottom: 8rpx; color: #fff; }
 .save-error .caption { color: var(--paper); }
+/* 两段到账：生活费到账后的补池与转存预览 */
+.allowance-hint { margin-top: 16rpx; }
+.date-picker { margin-top: 20rpx; text-decoration: underline; }

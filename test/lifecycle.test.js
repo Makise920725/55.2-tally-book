@@ -57,7 +57,7 @@ test('截止日后结算模式、SOP 勾选、余粮清理、情景一并转为�
   seed();
   assert.equal(store.setMode('three-day', AFTER).blocked, 'ended');
   assert.equal(store.getState().mode, 'daily', '模式没被改动');
-  assert.equal(store.togglePaydayStep(1, 2, AFTER).blocked, 'ended');
+  assert.equal(store.togglePaydayStep(1, 2, AFTER).blocked, 'ended', '结束后依然只读');
   assert.deepEqual(store.getState().paydaySteps, {});
   assert.equal(store.sweepPoolSurplus({ asOfDate: AFTER }).blocked, 'ended');
   assert.equal(store.setScenario('省', AFTER).blocked, 'ended');
@@ -68,12 +68,12 @@ test('截止日后结算模式、SOP 勾选、余粮清理、情景一并转为�
   assert.equal(store.reverseSpecial({ id: store.getState().ledger.specials[0].id, asOfDate: AFTER }).blocked, 'ended');
 });
 
-test('截止日之前仍可改模式与勾 SOP（只读只管“之后”）', () => {
+test('截止日之前仍可改模式；SOP 勾选一律由流水派生、拒绝手勾', () => {
   seed();
   assert.equal(store.setMode('three-day', D).blocked, undefined, '三日批次只能在首日切', );
   assert.equal(store.getState().mode, 'three-day');
-  assert.equal(store.togglePaydayStep(1, 2, D).blocked, undefined);
-  assert.equal(store.getState().paydaySteps['1-2'], true);
+  assert.equal(store.togglePaydayStep(1, 2, D).blocked, 'derived_step');
+  assert.equal(store.getState().paydaySteps['1-2'], undefined, '手勾不再落账');
 });
 
 test('余额校准是唯一保留的回顾期写入口，并自带 postPlan 标记', () => {

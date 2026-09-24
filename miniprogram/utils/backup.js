@@ -97,9 +97,13 @@ function validateState(state, problems) {
 // 账户集合、划转方向、kind 白名单、批次身份互不重叠、已执行发薪日与流水一致……
 // 这些一旦坏了，余额、退款、余粮都会算错，所以恢复前一律拒绝，让人去修备份而不是将错就错。
 const ACCOUNTS = Object.freeze([ACCT.BANK1, ACCT.POOL2, ACCT.POCKET3, ACCT.BILL, ACCT.OUT]);
-const TRANSFER_KINDS = Object.freeze(['payday_income', 'bill_repay', 'payday_budget', 'payday_save', 'daily_alloc', 'overspend_cover', 'daily_refund', 'carry_over']);
+const TRANSFER_KINDS = Object.freeze(['payday_income', 'allowance_income', 'bill_repay', 'payday_budget', 'payday_save', 'daily_alloc', 'overspend_cover', 'daily_refund', 'carry_over']);
+// 生活费两段到账的固定口径：金额恒为 2,000，日期必须落在本期区间内，每期最多一笔。
+const ALLOWANCE_AMOUNT = 200000;
+const INCOME_KINDS = Object.freeze(['payday_income', 'allowance_income', 'bill_repay', 'payday_budget', 'payday_save']);
 const MODES = Object.freeze(['daily', 'three-day']);
 const PERIOD_COUNT = 5;
+const PAYDAY_STEP_COUNT = 6;
 const MAX_NOTE_LENGTH = 500;
 const NON_NEGATIVE_INT = ['allocated', 'plannedBudget', 'refunded'];
 
@@ -116,6 +120,11 @@ function validateInvariants(state, problems) {
     if (item.from && item.from === item.to) problems.push(`transfers ${item.id} 的转入转出是同一个账户`);
     if (item.kind && !TRANSFER_KINDS.includes(item.kind)) problems.push(`transfers ${item.id} 的划转类型 ${item.kind} 无法识别`);
     if (item.batchKey !== undefined && typeof item.batchKey !== 'string') problems.push(`transfers ${item.id} 的批次标识必须是字符串`);
+    // periodIndex 只允许出现在期次流水上且必须是 1..5；两段到账靠它把流水归到正确期次。
+    if (item.periodIndex !== undefined) {
+      if (!INCOME_KINDS.includes(item.kind)) problems.push(`transfers ${item.id} 是非期次流水，不该带 periodIndex`);
+      else if (!Number.isInteger(item.periodIndex) || item.periodIndex < 1 || item.periodIndex > PERIOD_COUNT) problems.push(`transfers ${item.id} 的期次 ${item.periodIndex} 不存在`);
+    }
   });
   (ledger.expenses || []).forEach(item => {
     if (item.account && !ACCOUNTS.includes(item.account)) problems.push(`expenses ${item.id} 的账户 ${item.account} 不在账本账户集合里`);
@@ -172,17 +181,36 @@ function validateInvariants(state, problems) {
     }
   }));
 
+  const allPeriods = derivePeriods();
+  const salaryPeriods = new Set();
+  const allowanceCount = {};
+  (ledger.transfers || []).forEach(item => {
+    if (item.kind !== 'payday_income' && item.kind !== 'allowance_income') return;
+    // 新流水带 periodIndex；旧账本按发薪日匹配。
+    const period = Number.isInteger(item.periodIndex) ? allPeriods[item.periodIndex - 1] : allPeriods.find(entry => entry.payDate === item.date);
+    if (!period) return;
+    if (item.kind === 'payday_income') salaryPeriods.add(period.index);
+    else {
+      allowanceCount[period.index] = (allowanceCount[period.index] || 0) + 1;
+      if (item.amount !== ALLOWANCE_AMOUNT) problems.push(`transfers ${item.id} 的生活费金额必须是 ¥2,000.00`);
+      if (item.date < period.payDate || item.date > period.rangeEnd) problems.push(`transfers ${item.id} 的生活费到账日不在第 ${period.index} 期区间内`);
+    }
+  });
+  Object.keys(allowanceCount).forEach(index => {
+    if (allowanceCount[index] > 1) problems.push(`第 ${index} 期登记了 ${allowanceCount[index]} 笔生活费`);
+  });
   const incomeByDate = new Set((ledger.transfers || []).filter(item => item.kind === 'payday_income').map(item => item.date));
   Object.keys(state.executedPaydays || {}).forEach(key => {
     if (!/^[1-9][0-9]*$/.test(key) || Number(key) > PERIOD_COUNT) { problems.push(`已执行发薪日的期次 ${key} 不存在`); return; }
     if (!state.executedPaydays[key]) return;
     const period = derivePeriods()[Number(key) - 1];
     if (!period) { problems.push(`已执行发薪日的期次 ${key} 不存在`); return; }
-    if (!incomeByDate.has(period.payDate)) problems.push(`第 ${key} 期标记为已执行，但 ${period.payDate} 没有工资到账流水`);
+    if (!salaryPeriods.has(Number(key)) && !incomeByDate.has(period.payDate)) problems.push(`第 ${key} 期标记为已执行，但 ${period.payDate} 没有工资到账流水`);
   });
+  // v1.4.0 起步骤完成状态由流水派生，paydaySteps 只是历史备注：键是「期次-步骤」，值必须是布尔。
   Object.keys(state.paydaySteps || {}).forEach(key => {
     const matched = /^([1-9][0-9]*)-([1-9][0-9]*)$/.exec(key);
-    if (!matched || Number(matched[1]) > PERIOD_COUNT || Number(matched[2]) > PERIOD_COUNT) problems.push(`发薪日步骤 ${key} 不属于五期 × 五步`);
+    if (!matched || Number(matched[1]) > PERIOD_COUNT || Number(matched[2]) > PAYDAY_STEP_COUNT) problems.push(`发薪日步骤 ${key} 不属于五期 × 六步`);
     else if (typeof state.paydaySteps[key] !== 'boolean') problems.push(`发薪日步骤 ${key} 必须是布尔值`);
   });
   if (state.categories !== undefined && (!Array.isArray(state.categories)

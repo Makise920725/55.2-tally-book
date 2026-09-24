@@ -10,6 +10,7 @@ const TYPE_LABELS = Object.freeze({
 
 const KIND_LABELS = Object.freeze({
   payday_income: '工资到账',
+  allowance_income: '生活费到账',
   bill_repay: '还账单',
   payday_budget: '预算入余额宝',
   payday_save: '转入小荷包',
@@ -27,10 +28,10 @@ const ACCOUNT_LABELS = Object.freeze({
   [ACCT.OUT]: '支出'
 });
 
-// 发薪日四步在同一毫秒批量落库，createdAt 分不出先后；这里按 SOP 顺序（到账→还款→入池→转存）展示，
+// 发薪日多步在同一毫秒批量落库，createdAt 分不出先后；这里按 SOP 顺序（到账→还款→入池→转存）展示，
 // 其余流水仍按 id 倒序兜底，保证顺序稳定可复现。
-// 第五步「清理上期结余」紧跟在转入小荷包之后展示，与 SOP 顺序一致。
-const KIND_SEQUENCE = Object.freeze({ payday_income: 1, bill_repay: 2, payday_budget: 3, payday_save: 4, carry_over: 5 });
+// 「清理上期结余」紧跟在转入小荷包之后展示，与 SOP 顺序一致。
+const KIND_SEQUENCE = Object.freeze({ payday_income: 1, allowance_income: 2, bill_repay: 3, payday_budget: 4, payday_save: 5, carry_over: 6 });
 
 function pad(value) { return String(value).padStart(2, '0'); }
 

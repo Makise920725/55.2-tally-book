@@ -35,7 +35,7 @@ const findKind = (events, kind) => events.find(item => item.kind === kind);
 test('四类账本数据都能投影成统一流水', () => {
   const events = buildLedgerEvents(fullDay());
   assert.deepEqual(typesOf(events), ['adjust', 'expense', 'special', 'transfer']);
-  assert.deepEqual(kindsOf(events), ['adjust', 'bill_repay', 'daily_alloc', 'daily_refund', 'expense', 'payday_budget', 'payday_income', 'payday_save', 'special'].sort());
+  assert.deepEqual(kindsOf(events), ['adjust', 'allowance_income', 'bill_repay', 'daily_alloc', 'daily_refund', 'expense', 'payday_budget', 'payday_income', 'payday_save', 'special'].sort());
 });
 
 test('日额度划入 / 专项 / 校准都能在流水里看到，并带账户方向', () => {

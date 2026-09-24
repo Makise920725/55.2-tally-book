@@ -4,6 +4,7 @@
   <view wx:if="{{saveError}}" class="card save-error"><view class="section-title">未保存</view><view class="caption">{{saveError}}</view></view>
   <view wx:if="{{!started}}" class="card prestart"><view class="caption">计划尚未开始</view><view class="amount">还有 {{daysToStart}} 天</view><view class="caption">第一期工资到账日：2026-09-24</view></view>
   <view wx:elif="{{ended}}" class="card prestart"><view class="caption">五期计划已结束</view><view class="amount">已完成</view><view class="caption">计划截止日：{{deadline}}，可在“储蓄”和“我的”中查看或导出记录。</view></view>
+  <view wx:if="{{allowanceNotice}}" class="card allowance-notice"><view class="section-title">生活费待登记</view><view class="caption">{{allowanceNotice}}</view></view>
   <view wx:if="{{active}}" class="card hero"><view class="caption">今天还能花</view><view class="amount">¥ {{remaining}}</view><view class="caption">额度 ¥{{dailyBudget}}　·　轻盈记录，按自己的节奏</view><view class="progress"><view class="progress-fill" style="width: {{remaining / dailyBudget * 100}}%;"></view></view></view>
   <view wx:if="{{active}}" class="card">
     <view class="section-title">记一笔</view>

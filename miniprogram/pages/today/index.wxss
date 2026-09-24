@@ -22,3 +22,6 @@
 .save-error { border-color: var(--ink); background: var(--ink); }
 .save-error .section-title { margin-bottom: 8rpx; color: #fff; }
 .save-error .caption { color: var(--paper); }
+
+/* 两段到账：生活费待登记提醒 */
+.allowance-notice { border-color: var(--ink); }

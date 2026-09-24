@@ -1,7 +1,7 @@
 const STORAGE_KEY = 'p5519';
 const ROLLBACK_KEY = 'p5519.rollback';   // 恢复前自动留下的旧账本，用于一键撤销
 const META_KEY = 'p5519.meta';           // 最近备份/恢复时间等杂项
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 function seed() { return require('../domain/plan').createInitialState(); }
 
@@ -18,16 +18,11 @@ function migrate(state) {
   next.categories = next.categories || require('../domain/plan').DEFAULT_CATEGORIES;
   next.daySlots = next.daySlots || {};
   next.paydaySteps = next.paydaySteps || {};
-  // 第五步「清理上期结余」的完成状态改由真实 carry_over 流水派生：
-  // 旧版本执行发薪日时顺手打上的 *-5 勾全部丢弃，不让恢复后的账本继续谎报「五步完成」。
-  next.paydaySteps = Object.keys(next.paydaySteps).reduce((acc, key) => {
-    if (!/-5$/.test(key)) acc[key] = next.paydaySteps[key];
-    return acc;
-  }, {});
+  // v1.4.0 起发薪步骤一律由流水派生（工资到账 / 生活费到账 / 还账单 / 入池 / 转存 / 清理余粮），
+  // 旧版本遗留的手勾只作为历史备注保留，不会再把任何一步点亮成“已完成”。
   next.executedPaydays = next.executedPaydays || {};
-  // 期次是纯派生数据，每次装载都重算：缓存里带着一份旧情景的期次（例如换过预算情景、
-  // 或恢复了一份 periods 为空/陈旧的备份）会让页面失去期次依据、算错目标。
-  // 已执行期次的金额以流水为准，所以重算不会改写历史。
+  // 期次是纯派生数据，每次装载都重算：旧账本里合并入账的一笔工资+生活费会按
+  // 「计划工资 + 2,000 生活费」拆开识别（见 domain/plan.periodIncomeTotals），历史流水一字不改。
   next.periods = require('../domain/plan').periodsForState(next);
   next.mode = next.mode || 'daily';
   next.openingBalances = next.openingBalances || { BANK1: 0, POOL2: 0, POCKET3: 0, BILL: 0, OUT: 0 };

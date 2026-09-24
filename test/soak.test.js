@@ -43,14 +43,32 @@ function soak(seed) {
   global.wx = { getStorageSync: () => null, setStorageSync: () => {}, removeStorageSync: () => {} };
   store.reset();
   const rand = rng(seed);
+  const allowanceRand = rng(seed + 977);
+  // 待登记的生活费：工资日那天定下「生活费哪天到」，等循环真的走到那天再登记，
+  // 保证任何时刻账本都只包含「已经到账」的钱。
+  const pendingAllowances = [];
   const problems = [];
   let catchUps = 0;
   let sealedBatches = 0;
   let sweeps = 0;
   for (let date = CONFIG.startDate; date <= CONFIG.deadline && problems.length < 5; date = nextDay(date)) {
     const periods = store.getState().periods;
+    // 两段到账：工资日登记工资；生活费延后 1–6 天到，到账那天再登记。
     const payday = periods.find(item => item.payDate === date);
-    if (payday) store.executePayday(payday.index, date);
+    if (payday) {
+      store.registerSalaryDay(payday.index, date);
+      const allowanceDate = shiftDay(date, 1 + Math.floor(allowanceRand() * 6));
+      if (allowanceDate <= CONFIG.deadline && allowanceDate <= payday.rangeEnd && allowanceRand() < 0.9) {
+        pendingAllowances.push({ index: payday.index, date: allowanceDate });
+      }
+    }
+    for (let i = pendingAllowances.length - 1; i >= 0; i -= 1) {
+      if (pendingAllowances[i].date !== date) continue;
+      const due = pendingAllowances[i];
+      const result = store.registerAllowance(due.index, { date: due.date, asOfDate: date });
+      if (result.blocked && result.blocked !== 'already_received') problems.push(`${date} 生活费登记被拒: ${result.blocked}`);
+      pendingAllowances.splice(i, 1);
+    }
     if (rand() < 0.08) store.setScenario(scenarios[Math.floor(rand() * 3)], date);
     if (rand() < 0.05) store.setMode(store.getState().mode === 'three-day' ? 'daily' : 'three-day', date);
     if (rand() < 0.25) { /* 今天忘了点“早间划额”，之后某天补划 */ } else {
@@ -98,10 +116,13 @@ function soak(seed) {
       const net = accountBalanceFromEvents(buildLedgerEvents(state, { account: acct, perspective: acct }), acct, 0);
       if (net !== balances[acct]) problems.push(`${date} ${acct} 视图逐笔合计 ${net} ≠ 派生余额 ${balances[acct]}`);
     });
-    if (state.periods.some(item => item.executed && item.budgetToPool !== state.ledger.transfers
-      .filter(t => t.kind === 'payday_budget' && t.date === item.payDate).reduce((total, t) => total + t.amount, 0))) {
-      problems.push(`${date} 已执行期次预算与实际划转不一致`);
-    }
+    // 两段到账后入池会分工资日/生活费日两次发生，按期次核对（新流水带 periodIndex，旧流水按发薪日）。
+    state.periods.forEach(item => {
+      const placed = state.ledger.transfers
+        .filter(t => t.kind === 'payday_budget' && (Number.isInteger(t.periodIndex) ? t.periodIndex === item.index : t.date === item.payDate))
+        .reduce((total, t) => total + t.amount, 0);
+      if (placed !== item.poolPlaced) problems.push(`${date} 第 ${item.index} 期入池金额与流水不一致`);
+    });
     const allocDates = state.ledger.transfers.filter(t => t.kind === 'daily_alloc').map(t => t.date);
     if (new Set(allocDates).size !== allocDates.length) problems.push(`${date} 同一天出现多笔划额`);
     allocDates.forEach(day => {

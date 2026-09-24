@@ -1,7 +1,7 @@
 const { createExpense, createExpenseReversal, createTransfer, createSpecial, createSpecialReversal, accountBalances, sum, ACCT } = require('../domain/ledger');
 const { yuanToFen } = require('../domain/money');
 const { parseDate, dateKey, todayKey } = require('../domain/calendar');
-const { periodsForState, periodForDate, poolSurplus, SCENARIOS } = require('../domain/plan');
+const { CONFIG, periodsForState, periodForDate, poolSurplus, placementFor, SCENARIOS } = require('../domain/plan');
 const storage = require('../utils/storage');
 
 let state = null;
@@ -297,40 +297,6 @@ function reset() {
   return commit(storage.seed());
 }
 
-// ---- 发薪日 SOP 五步 ----
-// 前四步由「执行五步划转」一次性登记；第五步「清理上期结余」是真金白银的 carry_over 跨账户转账，
-// 它的完成状态一律由流水派生：只打个勾不代表钱进了小荷包。
-function periodSweptFen(current, periodIndex) {
-  const period = (current.periods || [])[periodIndex - 1];
-  if (!period) return 0;
-  return sum(current.ledger.transfers, item => item.kind === 'carry_over' && item.date >= period.rangeStart && item.date <= period.rangeEnd);
-}
-
-function isPaydayStepDone(current, periodIndex, step) {
-  const index = Number(step);
-  if (index === 5) return periodSweptFen(current, periodIndex) > 0;
-  return Boolean((current.paydaySteps || {})[`${periodIndex}-${index}`]);
-}
-
-// 页面统一取这份状态：transferDone 是前四步划转，allDone 才是「五步全部完成」。
-function paydayStepStatus(current, periodIndex) {
-  const done = [1, 2, 3, 4, 5].map(step => isPaydayStepDone(current, periodIndex, step));
-  return { done, transferDone: done.slice(0, 4).every(Boolean), sweptFen: periodSweptFen(current, periodIndex), allDone: done.every(Boolean) };
-}
-
-function togglePaydayStep(periodIndex, step, asOfDate = todayKey()) {
-  const current = getState();
-  const index = Number(step);
-  // 第五步不给手勾/手取消：想让它完成就真实转一次余粮。
-  if (index === 5) return { state: current, persisted: true, blocked: 'derived_step' };
-  // 计划结束后账本只读：SOP 勾选属于历史留痕，同样不再可改。
-  const planBlock = planOperationBlock(current, asOfDate);
-  if (planBlock) return { state: current, persisted: true, blocked: planBlock };
-  const key = `${periodIndex}-${index}`;
-  const paydaySteps = { ...(current.paydaySteps || {}), [key]: !(current.paydaySteps || {})[key] };
-  return commit({ ...current, paydaySteps });
-}
-
 function batchHasActivity(current, start, end) {
   const range = { start, end };
   const inRange = item => item.date >= start && item.date <= end;
@@ -385,29 +351,128 @@ function addAdjust({ date, acct, realBalanceYuan, bookBalanceYuan, note = '' }) 
   return commit({ ...current, ledger: { ...current.ledger, adjusts: [...current.ledger.adjusts, adjust] } });
 }
 
-function executePayday(periodIndex = 1, asOfDate = todayKey()) {
-  const current = getState();
-  if (current.executedPaydays[periodIndex]) return { state: current, persisted: true, alreadyExecuted: true };
-  const period = current.periods[periodIndex - 1];
-  if (!period) throw new RangeError('unknown payday period');
-  const date = period.payDate;
-  // 计划截止日后账本转为只读：不得再补登任何一期发薪日。
-  // 缺了这道检查，结束之后仍能凭空登记未执行的工资流水，
-  // 与支出、专项、划额、结算、清理、情景切换共用的「结束后只读」规则冲突。
-  if (planOperationBlock(current, asOfDate) === 'ended') return { state: current, persisted: true, blocked: 'ended', payDate: date };
-  // 发薪日之前不允许预登记，避免把未来工资提前算进余额。
-  if (date > asOfDate) return { state: current, persisted: true, blocked: 'not_reached', payDate: date };
-  const transfers = [
-    createTransfer({ id: `pay_in_${periodIndex}`, date, from: ACCT.OUT, to: ACCT.BANK1, amount: period.totalIn, kind: 'payday_income' }),
-    createTransfer({ id: `bill_${periodIndex}`, date, from: ACCT.BANK1, to: ACCT.BILL, amount: period.billTotal, kind: 'bill_repay' }),
-    createTransfer({ id: `budget_${periodIndex}`, date, from: ACCT.BANK1, to: ACCT.POOL2, amount: period.budgetToPool, kind: 'payday_budget' }),
-    createTransfer({ id: `save_${periodIndex}`, date, from: ACCT.BANK1, to: ACCT.POCKET3, amount: period.saveToPocket, kind: 'payday_save' })
+// ---- 发薪日 SOP：两段到账（工资日 / 生活费日）+ 三步划转 + 清理余粮 ----
+// 工资日先登记工资，生活费日（一般 28 日）再登记生活费；每一笔到账都按
+// 「账单 → 预算池 → 储蓄」安置，所有完成状态由真实流水派生：手点不出勾，也不会出现负数划转。
+function periodSweptFen(current, periodIndex) {
+  const period = (current.periods || [])[periodIndex - 1];
+  if (!period) return 0;
+  return sum(current.ledger.transfers, item => item.kind === 'carry_over' && item.date >= period.rangeStart && item.date <= period.rangeEnd);
+}
+
+// 六个动作的完成状态：1 工资到账、2 生活费到账、3 还账单、4 入池、5 转存、6 清理余粮。
+// 前五项在两笔收入都安置完之后必然全为真；只认流水，不认手勾。
+function paydayStepStatus(current, periodIndex) {
+  const period = (current.periods || [])[periodIndex - 1];
+  if (!period) return { done: [false, false, false, false, false, false], transferDone: false, allDone: false, sweptFen: 0, fullyFunded: false };
+  const sweptFen = periodSweptFen(current, periodIndex);
+  const done = [
+    period.salaryReceived,
+    period.allowanceReceived,
+    period.billPlaced >= period.planBill,
+    period.poolPlaced >= period.budgetToPool,
+    period.savePlaced >= period.saveToPocket,
+    sweptFen > 0
   ];
-  const paydaySteps = { ...current.paydaySteps };
-  // 只登记前四步。第五步「清理余粮」是另一笔真实转账（carry_over），完成状态由流水派生，
-  // 在这里顺手打勾会让 SOP 状态和真实转账脱钩。
-  for (let step = 1; step <= 4; step += 1) paydaySteps[`${periodIndex}-${step}`] = true;
-  return commit(refreshPeriods({ ...current, paydaySteps, executedPaydays: { ...current.executedPaydays, [periodIndex]: true }, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, ...transfers] } }));
+  return { done, transferDone: done.slice(0, 5).every(Boolean), allDone: done.every(Boolean), sweptFen, fullyFunded: Boolean(period.fullyFunded) };
+}
+
+function isPaydayStepDone(current, periodIndex, step) {
+  return paydayStepStatus(current, periodIndex).done[Number(step) - 1] === true;
+}
+
+// 所有步骤都改为流水派生，手勾会让勾与钱脱钩：统一拒绝，并保留这个入口给页面兜底提示。
+function togglePaydayStep(periodIndex, step, asOfDate = todayKey()) {
+  const current = getState();
+  const planBlock = planOperationBlock(current, asOfDate);
+  if (planBlock) return { state: current, persisted: true, blocked: planBlock };
+  return { state: current, persisted: true, blocked: 'derived_step', periodIndex: Number(periodIndex), step: Number(step) };
+}
+
+// 一次到账的安置：先写收入流水，再按「账单 → 预算池 → 储蓄」的顺序写划转。
+// 只安置这次到账的钱：缺口补满就停，剩下的全部进小荷包，金额恒为正。
+function placementTransfers(period, index, { kind, amount, date, incomeId }) {
+  const placements = placementFor(period, amount);
+  const income = createTransfer({ id: incomeId, date, from: ACCT.OUT, to: ACCT.BANK1, amount, kind });
+  income.periodIndex = index;
+  const transfers = [income];
+  if (placements.bill > 0) {
+    const item = createTransfer({ id: uid('bill'), date, from: ACCT.BANK1, to: ACCT.BILL, amount: placements.bill, kind: 'bill_repay' });
+    item.periodIndex = index;
+    transfers.push(item);
+  }
+  if (placements.pool > 0) {
+    const item = createTransfer({ id: uid('budget'), date, from: ACCT.BANK1, to: ACCT.POOL2, amount: placements.pool, kind: 'payday_budget' });
+    item.periodIndex = index;
+    transfers.push(item);
+  }
+  if (placements.save > 0) {
+    const item = createTransfer({ id: uid('save'), date, from: ACCT.BANK1, to: ACCT.POCKET3, amount: placements.save, kind: 'payday_save' });
+    item.periodIndex = index;
+    transfers.push(item);
+  }
+  return { transfers, placements };
+}
+
+function periodAt(current, periodIndex) {
+  const index = Number(periodIndex);
+  const period = (current.periods || [])[index - 1];
+  if (!period) throw new RangeError('unknown payday period');
+  return period;
+}
+
+// 工资日登记：业务日期固定在发薪日（工资何时到账是确定的），不允许早于发薪日预登记。
+function registerSalaryDay(periodIndex = 1, asOfDate = todayKey()) {
+  const current = getState();
+  const period = periodAt(current, periodIndex);
+  const index = period.index;
+  // 计划截止日后账本只读：不得再补登任何一期发薪日。
+  if (planOperationBlock(current, asOfDate) === 'ended') {
+    return { state: current, persisted: true, blocked: 'ended', payDate: period.payDate };
+  }
+  if (period.salaryReceived) return { state: current, persisted: true, alreadyReceived: true, alreadyExecuted: true, payDate: period.payDate };
+  if (period.payDate > asOfDate) return { state: current, persisted: true, blocked: 'not_reached', payDate: period.payDate };
+  const { transfers, placements } = placementTransfers(period, index, {
+    kind: 'payday_income', amount: period.salary, date: period.payDate, incomeId: `pay_in_${index}`
+  });
+  const next = {
+    ...current,
+    executedPaydays: { ...current.executedPaydays, [index]: true },
+    ledger: { ...current.ledger, transfers: [...current.ledger.transfers, ...transfers] }
+  };
+  return { ...commit(refreshPeriods(next)), placements, payDate: period.payDate, salaryReceived: true };
+}
+
+// 生活费登记：金额固定 2,000；必须先登记工资（生活费不会早于工资日到），
+// 到账日期可选（默认今天，落在本期区间内、且不能晚于今天），到账当天登记后自动补足预算池并转存余额。
+function registerAllowance(periodIndex = 1, { date = todayKey(), asOfDate = todayKey() } = {}) {
+  const current = getState();
+  const period = periodAt(current, periodIndex);
+  const index = period.index;
+  const block = planOperationBlock(current, asOfDate);
+  if (block) return { state: current, persisted: true, blocked: block, payDate: period.payDate };
+  if (!DATE_ONLY_RE.test(String(date || ''))) return { state: current, persisted: true, blocked: 'bad_date' };
+  if (period.allowanceReceived) return { state: current, persisted: true, alreadyReceived: true, payDate: period.payDate };
+  if (!period.salaryReceived) return { state: current, persisted: true, blocked: 'salary_pending', payDate: period.payDate };
+  if (date < period.payDate || date > period.rangeEnd) return { state: current, persisted: true, blocked: 'outside_range', payDate: period.payDate, rangeEnd: period.rangeEnd };
+  if (date > asOfDate) return { state: current, persisted: true, blocked: 'not_reached', payDate: period.payDate };
+  const { transfers, placements } = placementTransfers(period, index, {
+    kind: 'allowance_income', amount: CONFIG.monthlyAllowance, date, incomeId: `allow_${index}`
+  });
+  const next = { ...current, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, ...transfers] } };
+  return { ...commit(refreshPeriods(next)), placements, payDate: period.payDate, allowanceDate: date, allowanceReceived: true };
+}
+
+// 兼容入口：工资与生活费同一天到账时的两步合一（旧调用方与浸泡测试仍可用）。
+// 已经登记过工资的期次不再走这里：生活费另有专用入口，避免把 28 日的到账写成工资日。
+function executePayday(periodIndex = 1, asOfDate = todayKey()) {
+  const salary = registerSalaryDay(periodIndex, asOfDate);
+  if (salary.blocked || salary.persisted === false) return salary;
+  if (salary.alreadyReceived) return { ...salary, alreadyExecuted: true };
+  const period = periodAt(getState(), periodIndex);
+  const allowance = registerAllowance(periodIndex, { date: period.payDate, asOfDate });
+  if (allowance.blocked || allowance.persisted === false) return allowance;
+  return { ...allowance, alreadyExecuted: false };
 }
 
 function addSpecial({ date, reason, amountYuan, note = '' }) {
@@ -434,8 +499,9 @@ function setScenario(scenario, asOfDate = todayKey()) {
   }
   const dailyBudget = SCENARIOS[scenario];
   const next = refreshPeriods({ ...current, config: { ...current.config, dailyBudget, scenario } });
-  const frozen = next.periods.filter(item => item.executed).map(item => item.index);
-  const replanned = next.periods.filter(item => !item.executed).map(item => item.index);
+  // 锁定 = 两笔收入都到齐、口径已落成流水；只登记了工资的期次，未安置部分仍按新情景重算。
+  const frozen = next.periods.filter(item => item.fullyFunded).map(item => item.index);
+  const replanned = next.periods.filter(item => !item.fullyFunded).map(item => item.index);
   return { ...commit(next), scenario, dailyBudget, frozen, replanned };
 }
 
@@ -660,7 +726,7 @@ function undoRestore() {
   return { ok: true, state: result.state, meta: backupMeta() };
 }
 
-// ---- 第五步「清理上期结余」：余额宝里用不完的余粮真实转进小荷包 ----
+// ---- 第六步「清理上期结余」：余额宝里用不完的余粮真实转进小荷包 ----
 // surplusPlan 同时服务页面显示与实际写入：看到的金额和转走的金额不可能变成两套算法。
 function surplusPlan(current, asOfDate) {
   const planBlock = planOperationBlock(current, asOfDate);
@@ -718,4 +784,4 @@ function removeCategory(id) {
   return commit({ ...current, categories: current.categories.filter(item => item.id !== id) });
 }
 
-module.exports = { getState, newCategoryId, subscribe, addExpense, previewAllocation, previewSettlement, previewPoolSurplus, sweepPoolSurplus, reverseExpense, reverseSpecial, reverseEntries, previewReversal, settleDay, reopenDay, togglePaydayStep, isPaydayStepDone, paydayStepStatus, periodSweptFen, executePayday, addSpecial, setMode, setScenario, allocateDay, addCategory, removeCategory, addAdjust, reset, backupMeta, markBackedUp, restoreFromBackup, undoRestore };
+module.exports = { getState, newCategoryId, subscribe, addExpense, registerSalaryDay, registerAllowance, previewAllocation, previewSettlement, previewPoolSurplus, sweepPoolSurplus, reverseExpense, reverseSpecial, reverseEntries, previewReversal, settleDay, reopenDay, togglePaydayStep, isPaydayStepDone, paydayStepStatus, periodSweptFen, executePayday, addSpecial, setMode, setScenario, allocateDay, addCategory, removeCategory, addAdjust, reset, backupMeta, markBackedUp, restoreFromBackup, undoRestore };

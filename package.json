@@ -1,6 +1,6 @@
 {
   "name": "tally-book",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "55块2：本地优先的微信小程序财务台账",
   "scripts": {

@@ -152,11 +152,11 @@ Page({
     const state = store.getState();
     if (scenario === state.config.scenario) return;
     const dailyBudget = formatFen(SCENARIOS[scenario]);
-    const frozen = (state.periods || []).filter(item => item.executed).map(item => `第 ${item.index} 期`);
+    const frozen = (state.periods || []).filter(item => item.fullyFunded).map(item => `第 ${item.index} 期`);
     wx.showModal({
       title: `切换到 ${scenario}（¥${dailyBudget}/天）`,
       content: frozen.length
-        ? `已执行的 ${frozen.join('、')} 保持实际转账金额不变；其余期次与储蓄轨迹按 ¥${dailyBudget}/天 重算。已封账的日结算不受影响。`
+        ? `两笔收入已到齐的 ${frozen.join('、')} 按实际流水锁定；其余期次与储蓄轨迹按 ¥${dailyBudget}/天 重算。已封账的日结算不受影响。`
         : `五期预算与储蓄轨迹按 ¥${dailyBudget}/天 重算。已封账的日结算按实际划入金额退款，不受影响。`,
       confirmText: '切换',
       cancelText: '保持不动',
@@ -165,7 +165,7 @@ Page({
         const changed = store.setScenario(scenario, todayKey());
         this.refresh();
         if (changed.blocked) { write.notifyBlocked(changed, BLOCKED_TEXT, '现在不能调整预算情景'); return; }
-        const replanned = changed.replanned.length ? `重算 ${changed.replanned.map(index => `第 ${index} 期`).join('、')}` : '五期均已按流水锁定';
+        const replanned = changed.replanned.length ? `重算 ${changed.replanned.map(index => `第 ${index} 期`).join('、')}` : '五期两笔收入均已到齐，按流水锁定';
         write.notify(changed, `已切换到 ${scenario} · ${replanned}`);
       }
     });

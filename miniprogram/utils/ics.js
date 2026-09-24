@@ -20,6 +20,17 @@ function exportPaydayIcs(periods) {
     'METHOD:PUBLISH'
   ];
   periods.forEach(item => {
+    if (item.allowanceReceived === false && item.allowanceExpectedDate) {
+      body.push(
+        'BEGIN:VEVENT',
+        `UID:55kuai2-allowance-${item.index}@tally-book`,
+        `DTSTAMP:${compactDate(item.allowanceExpectedDate)}T000000Z`,
+        `DTSTART;VALUE=DATE:${compactDate(item.allowanceExpectedDate)}`,
+        `DTEND;VALUE=DATE:${compactDate(nextDay(item.allowanceExpectedDate))}`,
+        `SUMMARY:55块2 · 预计生活费到账 ¥${(item.allowance / 100).toFixed(2)}（到账后登记）`,
+        'END:VEVENT'
+      );
+    }
     body.push(
       'BEGIN:VEVENT',
       `UID:55kuai2-period-${item.index}@tally-book`,

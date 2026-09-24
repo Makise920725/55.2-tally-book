@@ -42,8 +42,13 @@ Page({
       adjust: totals.adjustFen ? `${totals.adjustFen < 0 ? '−' : '+'}¥${formatFen(Math.abs(totals.adjustFen))}` : '',
       count: totals.count
     };
+    // 两段到账提醒：工资已登记、生活费过了预计日还没登记，就在今日页顶上提示一次。
+    const currentPeriod = (state.periods || []).find(item => today >= item.rangeStart && today <= item.rangeEnd) || null;
+    const allowanceNotice = currentPeriod && currentPeriod.salaryReceived && !currentPeriod.allowanceReceived && today >= currentPeriod.allowanceExpectedDate
+      ? `第 ${currentPeriod.index} 期生活费还没登记：预计 ${currentPeriod.allowanceExpectedDate} 到账 ¥${formatFen(currentPeriod.allowance)}，到账后去发薪日页登记`
+      : '';
     const left = remainingDailyBudget(state.ledger.expenses, today, state.config.dailyBudget);
-    this.setData({ dailyBudget: formatFen(state.config.dailyBudget), remaining: formatFen(left), deadline: state.config.deadline, categories: state.categories, entries, summary, closed: !!(state.daySlots[today] && state.daySlots[today].closed), started, ended, active, daysToStart: Math.max(0, daysUntil(state.config.startDate)) });
+    this.setData({ dailyBudget: formatFen(state.config.dailyBudget), remaining: formatFen(left), deadline: state.config.deadline, categories: state.categories, entries, summary, closed: !!(state.daySlots[today] && state.daySlots[today].closed), started, ended, active, allowanceNotice, daysToStart: Math.max(0, daysUntil(state.config.startDate)) });
   },
   selectCategory(event) { this.setData({ selectedCategory: event.currentTarget.dataset.category, selectedCategoryName: event.currentTarget.dataset.name, keyboardVisible: true }); },
   openKeyboard() { this.setData({ keyboardVisible: true }); },

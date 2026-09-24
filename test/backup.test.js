@@ -100,7 +100,7 @@ test('备份文件命名与账本摘要', () => {
   seedLedger();
   const state = store.getState();
   assert.equal(backup.backupFileName('20260924-083000'), '55kuai2-backup-20260924-083000.json');
-  assert.equal(backup.describeState(state), '支出 1 笔 · 划转 6 笔 · 专项 1 笔 · 校准 1 条');
+  assert.equal(backup.describeState(state), '支出 1 笔 · 划转 8 笔 · 专项 1 笔 · 校准 1 条');
   const text = JSON.parse(backup.createBackupText(state));
   assert.equal(text.format, 'tally-book-backup');
   assert.equal(text.schemaVersion, SCHEMA_VERSION);

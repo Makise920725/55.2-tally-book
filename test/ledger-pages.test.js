@@ -525,7 +525,7 @@ test('场景五：第五步「清理余粮」在发薪日页与储蓄页都必�
     const payday = mount('../miniprogram/pages/payday/index.js');
     payday.onLoad();
     assert.equal(payday.data.canSweep, true);
-    assert.match(payday.data.steps[4].amount, /当前可清理 ¥35\.19/);
+    assert.match(payday.data.steps[5].flowText, /当前可清理 ¥35\.19/);
     assert.match(payday.data.sweepText, /清理余额宝余粮 ¥35\.19 → 小荷包/);
 
     // 先点「先不转」：一个字都不该写

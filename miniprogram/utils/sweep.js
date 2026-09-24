@@ -1,4 +1,4 @@
-// 第五步「清理上期结余」是真实的跨账户转账（余额宝②→小荷包③），
+// 第六步「清理上期结余」是真实的跨账户转账（余额宝②→小荷包③），
 // 所以任何页面都必须“先确认、再写账”，而且金额一律来自 store 的余粮口径，页面不自己算。
 const store = require('../store/store');
 const { formatFen } = require('../domain/money');
@@ -41,7 +41,7 @@ function sweepWithConfirm(onDone) {
       const swept = store.sweepPoolSurplus({ asOfDate: date });
       if (swept.blocked) wx.showToast({ title: swept.blocked === 'ended' ? '计划已结束，账本转为只读' : '现在不能清理余粮', icon: 'none' });
       else if (swept.skipped) wx.showToast({ title: '已经没有可清理的余粮了', icon: 'none' });
-      // 只有真的落盘才说「已转入小荷包」：第五步的完成状态正是由这条 carry_over 流水派生的。
+      // 只有真的落盘才说「已转入小荷包」：这一步的完成状态正是由这条 carry_over 流水派生的。
       else write.notify(swept, '已转入小荷包 ¥' + formatFen(swept.swept));
       if (onDone) onDone(swept);
     }
