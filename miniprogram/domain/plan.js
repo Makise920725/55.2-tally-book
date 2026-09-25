@@ -144,7 +144,11 @@ function derivePeriods({ dailyBudget = CONFIG.dailyBudget, allowanceExpectedDay 
     // 计划表假设预算会被花光（saveToPocket = totalIn − bill − budgetToPool）；
     // 两笔收入都到齐后改用流水事实，情景切换不再追溯改写已经发生的划转。
     const totalIn = fullyFunded ? totals.salaryIn + totals.allowanceIn : planTotalIn;
-    const billTotal = fullyFunded ? totals.billPlaced : planBill;
+    // 账单和另外两项不一样：它是外部固定义务（信用卡/花呗的真实账单），既不是计划参数、
+    // 也不会随情景变化，更不能因为「用户选择少还一点」就跟着缩水。
+    // 早先这里在两笔到齐后取 totals.billPlaced，一旦允许自选安置，少还的账单会被当成
+    // 「目标已达成」，第三步凭空打勾、账上也看不出还欠多少。所以一律用计划账单额。
+    const billTotal = planBill;
     const budgetToPool = fullyFunded ? totals.poolPlaced : planBudget;
     const saveToPocket = fullyFunded ? totals.savePlaced : planSave;
     pocket += saveToPocket - specialOut;
@@ -157,12 +161,16 @@ function derivePeriods({ dailyBudget = CONFIG.dailyBudget, allowanceExpectedDay 
       allowanceDate: totals.allowanceDate || '', allowanceExpectedDate: allowanceExpectedDate(payDate, allowanceExpectedDay),
       billPlaced: totals.billPlaced, poolPlaced: totals.poolPlaced, savePlaced: totals.savePlaced,
       planBill, planBudget, planSave,
-      pendingBill: Math.max(0, planBill - totals.billPlaced),
-      pendingPool: Math.max(0, planBudget - totals.poolPlaced),
-      pendingSave: Math.max(0, planSave - totals.savePlaced),
-      unplacedFen: Math.max(0, totals.salaryIn + totals.allowanceIn - totals.billPlaced - totals.poolPlaced - totals.savePlaced)
+      // 缺口一律按「这一期此刻真正要达到的目标」算，与 paydayStepStatus 的打勾口径完全一致：
+      // done[i] <=> pending[i] === 0。两笔到齐后目标就是流水事实（billTotal / budgetToPool / saveToPocket），
+      // 所以页面不会再出现「勾已经打上、文案却说还差 ¥55.27」这种自相矛盾。
+      pendingBill: Math.max(0, billTotal - totals.billPlaced),
+      pendingPool: Math.max(0, budgetToPool - totals.poolPlaced),
+      pendingSave: Math.max(0, saveToPocket - totals.savePlaced)
     };
-    // 工资已登记、生活费未到：给出「生活费到账后将如何安置」的纯预览，供发薪日页显示待办金额。
+    // 两个纯预览：给出「这笔钱到账后将如何安置」，页面与确认弹窗直接念这份数字，不自己算。
+    // 工资还没登记 → salaryPlan；工资已登记、生活费未到 → allowancePlan（同时是余粮口径里的待补池额）。
+    period.salaryPlan = salaryReceived ? null : placementFor(period, salary);
     period.allowancePlan = salaryReceived && !allowanceReceived ? placementFor(period, allowance) : null;
     return period;
   });
@@ -180,13 +188,20 @@ function periodsForState(state) {
 // 这就是发薪日 SOP 第六步「清理上期结余」该真实转进小荷包的金额：
 // 计划表假设预算会被花光（saveToPocket = totalIn − bill − budgetToPool），
 // 没花完的余粮、以及改小情景后多出来的额度，都只会躺在余额宝里，不计入储蓄。
-function poolSurplus({ poolBalance, dailyBudget, asOfDate, rangeEnd, daySettled = false }) {
+//
+// pendingPool 是两段到账留下的口子：工资日之后预算池还差这么多才满，而生活费到账时 placementFor
+// 一定会把它补进来（就是 period.allowancePlan.pool）。这笔钱不该算作「现在必须留在池子里」，
+// 否则上一期的真实余粮会被这道缺口整个吞掉 —— 第 1、2 期的缺口分别有 ¥144.83 / ¥647.88，
+// 只要上期余粮小于它，第六步在工资日就永远算出 0，非拖到生活费日才清得出来。
+function poolSurplus({ poolBalance, dailyBudget, asOfDate, rangeEnd, daySettled = false, pendingPool = 0 }) {
   if (!Number.isInteger(poolBalance) || !Number.isInteger(dailyBudget)) throw new TypeError('poolSurplus needs integer cents');
   // 今天所在的批次已封账 → 今天不用再预留额度（未花的钱已经退回余额宝，属于余粮）；
   // 这样截止日当天结完账，最后一期的余粮也还能清干净。
   const days = Math.max(0, daysFrom(asOfDate, rangeEnd) + (daySettled ? 0 : 1));
   const needed = days * dailyBudget;
-  return { remainingDays: days, needed, surplus: Math.max(0, poolBalance - needed) };
+  const incoming = Number.isInteger(pendingPool) && pendingPool > 0 ? pendingPool : 0;
+  const reserve = Math.max(0, needed - incoming);
+  return { remainingDays: days, needed, reserve, surplus: Math.max(0, poolBalance - reserve) };
 }
 
 // 计划区间之外（未开始 / 已结束）返回 null，避免把任意日期都当成第 1 期。

@@ -12,11 +12,30 @@
         <view class="secondary-text wx-value">{{item.flowText}}</view>
       </view>
     </view>
+    <!-- 回退紧跟在步骤列表下面：这几步的勾就是被「登记到账」打上的，想取消就得在这里找得到 -->
+    <view wx:if="{{undo || undoText}}" class="undo-box">
+      <view class="caption undo-hint">{{undo ? '这些勾是登记到账时按真实流水打上的，点下面可以整笔退掉（连它当时安置的几笔一起删）：' : undoText}}</view>
+      <button wx:if="{{undo}}" class="button secondary undo-button" bindtap="undoArrival">回退这笔到账</button>
+    </view>
     <view wx:if="{{period.allowanceHint}}" class="caption allowance-hint">{{period.allowanceHint}}</view>
-    <button wx:if="{{!period.salaryReceived}}" class="button" style="margin-top: 24rpx;" disabled="{{!canRegisterSalary}}" bindtap="registerSalary">{{salaryButtonText}}</button>
-    <button wx:if="{{period.salaryReceived && !period.allowanceReceived}}" class="button" style="margin-top: 24rpx;" disabled="{{!canRegisterAllowance}}" bindtap="registerAllowance">{{allowanceButtonText}}</button>
+    <view wx:if="{{period.overdueNote}}" class="caption allowance-overdue">{{period.overdueNote}}</view>
+    <!-- 自选安置：这笔到账怎么分由用户决定，预填推荐值（账单 → 余额宝 → 小荷包） -->
+    <view wx:if="{{splitEditor}}" class="split-box">
+      <view class="section-title">{{splitEditor.title}}</view>
+      <view class="caption">到账 ¥{{splitEditor.incomeText}}。三个口袋怎么分由你定，合计必须正好等于到账金额；下面是推荐值，改了就以你填的为准。</view>
+      <view class="split-row"><text class="split-label">还账单</text><input class="split-input" type="digit" value="{{splitEditor.billYuan}}" data-field="billYuan" bindinput="inputSplit" /><text class="split-unit">元</text></view>
+      <view class="split-row"><text class="split-label">放余额宝</text><input class="split-input" type="digit" value="{{splitEditor.poolYuan}}" data-field="poolYuan" bindinput="inputSplit" /><text class="split-unit">元</text></view>
+      <view class="split-row"><text class="split-label">存小荷包</text><input class="split-input" type="digit" value="{{splitEditor.saveYuan}}" data-field="saveYuan" bindinput="inputSplit" /><text class="split-unit">元</text></view>
+      <view class="split-total {{splitEditor.canSubmit ? '' : 'split-bad'}}">合计 ¥{{splitEditor.totalText}}　/　到账 ¥{{splitEditor.incomeText}}</view>
+      <view wx:if="{{splitEditor.problem}}" class="caption split-problem">{{splitEditor.problem}}</view>
+      <view wx:if="{{splitEditor.notes}}" class="caption split-note">{{splitEditor.notes}}</view>
+      <view class="caption">推荐：{{splitEditor.recommendText}}　·　账单最多还能还 ¥{{splitEditor.billRoomText}}</view>
+      <button class="button secondary split-reset" bindtap="resetSplit">用推荐分配</button>
+    </view>
+    <button wx:if="{{!period.salaryReceived}}" class="button" style="margin-top: 24rpx;" disabled="{{!canRegisterSalary || (splitEditor && !splitEditor.canSubmit)}}" bindtap="registerSalary">{{salaryButtonText}}</button>
+    <button wx:if="{{period.salaryReceived && !period.allowanceReceived}}" class="button" style="margin-top: 24rpx;" disabled="{{!canRegisterAllowance || (splitEditor && !splitEditor.canSubmit)}}" bindtap="registerAllowance">{{allowanceButtonText}}</button>
     <picker wx:if="{{period.salaryReceived && !period.allowanceReceived && canRegisterAllowance}}" mode="date" value="{{allowancePickerValue}}" start="{{period.payDate}}" end="{{allowancePickerEnd}}" bindchange="registerAllowance"><view class="caption date-picker">生活费实际到账日默认今天；若换过手机日期不对，点这里按真实日期登记（{{period.payDate}} → {{period.rangeEnd}}）</view></picker>
-    <view wx:if="{{period.fullyFunded}}" class="caption allowance-hint">两笔收入已按「账单 → 预算池 → 储蓄」安置完毕</view>
+    <view wx:if="{{period.fullyFunded && transferDone}}" class="caption allowance-hint">两笔收入已按你选的分配安置完毕</view>
     <view wx:if="{{legacyHint}}" class="caption allowance-hint">{{legacyHint}}</view>
     <button wx:if="{{canSweep}}" class="button secondary" style="margin-top: 16rpx;" bindtap="sweepSurplus">{{sweepText}}</button>
   </view>

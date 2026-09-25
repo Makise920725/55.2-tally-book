@@ -1,4 +1,4 @@
-// 发薪日第五步「清理上期结余」：余额宝里超出“本期剩余计划开销”的钱，
+// 发薪日第六步「清理上期结余」：余额宝里超出“本期剩余计划开销”的钱，
 // 必须靠一笔真实的 carry_over 划转才能进小荷包——不点就不会动，也不会有第二笔账。
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -13,9 +13,15 @@ const sweeps = state => state.ledger.transfers.filter(item => item.kind === 'car
 
 test('余粮口径是纯函数：余额减去剩余天数的计划开销', () => {
   assert.deepEqual(poolSurplus({ poolBalance: 154051, dailyBudget: 4829, asOfDate: '2026-09-27', rangeEnd: '2026-10-22' }),
-    { remainingDays: 26, needed: 125554, surplus: 28497 });
+    { remainingDays: 26, needed: 125554, reserve: 125554, surplus: 28497 });
   assert.deepEqual(poolSurplus({ poolBalance: 100, dailyBudget: 4829, asOfDate: '2026-09-27', rangeEnd: '2026-09-27' }),
-    { remainingDays: 1, needed: 4829, surplus: 0 }, '池子不够时不提示清理');
+    { remainingDays: 1, needed: 4829, reserve: 4829, surplus: 0 }, '池子不够时不提示清理');
+  // 两段到账：生活费还会补进池子的部分不占「现在必须留着」的名额，
+  // 所以上一期的真实余粮在工资日就能清出来，不必拖到生活费日。
+  assert.deepEqual(poolSurplus({ poolBalance: 132390, dailyBudget: 5519, asOfDate: '2026-10-23', rangeEnd: '2026-11-24', pendingPool: 64788 }),
+    { remainingDays: 33, needed: 182127, reserve: 117339, surplus: 15051 }, '缺口 647.88 不再吞掉余粮 150.51');
+  assert.equal(poolSurplus({ poolBalance: 132390, dailyBudget: 5519, asOfDate: '2026-10-23', rangeEnd: '2026-11-24' }).surplus, 0,
+    '不传 pendingPool 时仍是旧口径');
   assert.throws(() => poolSurplus({ poolBalance: 1.5, dailyBudget: 4829, asOfDate: '2026-09-27', rangeEnd: '2026-10-22' }));
 });
 

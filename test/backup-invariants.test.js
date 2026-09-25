@@ -71,13 +71,22 @@ test('划转的两端必须是已知账户且不能自己转给自己', () => {
 test('划转类型必须认识，否则余额派生会漏算这一笔', () => {
   const text = richBackupText();
   reject(tamper(text, o => { o.state.ledger.transfers[0].kind = 'free_money'; }), /划转类型 .*无法识别/);
-  // 白名单里的每种真实 kind 都必须放行：改一笔划额流水（不动发薪流水，免得撞「已执行期次」那条）
+  // 白名单里的每种真实 kind 都必须被「认识」：改一笔划额流水（不动发薪流水，免得撞「已执行期次」那条）
   const allocIndex = JSON.parse(text).state.ledger.transfers.findIndex(item => item.kind === 'daily_alloc');
+  // 注意：把一笔划额流水改名成期次流水，会让「已安置 == 已到账」对不上（凭空多出/少掉一笔钱），
+  // 那是账务不变量该拦的，跟 kind 白名单认不认识它无关 —— 所以这里只断言「没被判成无法识别」，
+  // 期次类 kind 允许（且只允许）因为期次口径被拒。
+  const PERIOD_INCOME_KINDS = ['payday_income', 'bill_repay', 'payday_budget', 'payday_save'];
   ['payday_income', 'bill_repay', 'payday_budget', 'payday_save', 'daily_alloc', 'overspend_cover', 'daily_refund', 'carry_over']
     .forEach(kind => {
       // 生活费到账有固定金额/日期口径，单独在下面验证，不能拿一笔划额流水改个名字蒙混。
       const parsed = backup.parseBackupText(tamper(text, o => { o.state.ledger.transfers[allocIndex].kind = kind; }));
-      assert.equal(parsed.ok, true, `${kind} 应被放行：${(parsed.problems || []).join(' | ')}`);
+      const problems = parsed.problems || [];
+      assert.ok(!problems.some(item => /无法识别/.test(item)), `${kind} 不该被判成无法识别的划转类型`);
+      if (parsed.ok) return;
+      assert.ok(PERIOD_INCOME_KINDS.includes(kind), `${kind} 被拒却不是期次口径问题：${problems.join(' | ')}`);
+      assert.ok(problems.every(item => /已安置 \d+ 分与已到账 \d+ 分对不上/.test(item)),
+        `${kind} 只应触发「已安置 == 已到账」：${problems.join(' | ')}`);
     });
   // 生活费到账：金额固定 2,000、必须落在本期区间，且不能写成同一天的工资
   const allowanceIndex = JSON.parse(text).state.ledger.transfers.findIndex(item => item.kind === 'allowance_income');
@@ -111,7 +120,24 @@ test('已执行发薪日必须有对应的工资到账流水', () => {
   assert.equal(backup.parseBackupText(tamper(text, o => { o.state.executedPaydays = { 1: true, 5: true }; })).ok, true);
 });
 
-test('SOP 勾选只能是五期 × 五步的布尔值', () => {
+test('每期「已安置 == 已到账」：钱进来多少就必须落到账单/预算池/小荷包三者之一', () => {
+  const text = richBackupText();
+  // 少安置一笔：转存金额被改小，钱就凭空蒸发了一块
+  reject(tamper(text, o => {
+    o.state.ledger.transfers.find(item => item.kind === 'payday_save' && item.periodIndex === 1).amount -= 10000;
+  }), /第 1 期已安置 \d+ 分与已到账 \d+ 分对不上/);
+  // 多出一笔收入：同样对不上（自选安置之后这条尤其重要，页面校验合计，备份可能被手改）
+  reject(tamper(text, o => {
+    o.state.ledger.transfers.find(item => item.kind === 'payday_income' && item.periodIndex === 1).amount += 10000;
+  }), /第 1 期已安置 \d+ 分与已到账 \d+ 分对不上/);
+  // 只是把钱从「小荷包」挪到「余额宝」，合计不变 → 必须放行
+  assert.equal(backup.parseBackupText(tamper(text, o => {
+    o.state.ledger.transfers.find(item => item.kind === 'payday_save' && item.periodIndex === 1).amount -= 10000;
+    o.state.ledger.transfers.find(item => item.kind === 'payday_budget' && item.periodIndex === 1).amount += 10000;
+  })).ok, true, '三个口袋之间怎么分是用户的自由，只要合计对得上');
+});
+
+test('SOP 勾选只能是五期 × 六步的布尔值', () => {
   const text = richBackupText();
   reject(tamper(text, o => { o.state.paydaySteps = { '1-9': true }; }), /不属于五期 × 六步/);
   assert.equal(backup.parseBackupText(tamper(text, o => { o.state.paydaySteps = { '1-6': true }; })).ok, true, '历史勾最多到第六步');

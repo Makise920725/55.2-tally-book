@@ -16,10 +16,38 @@ const BLOCKED_TEXT = {
 };
 
 Page({
-  data: { dailyBudget: formatFen(CONFIG.dailyBudget), remaining: formatFen(CONFIG.dailyBudget), deadline: CONFIG.deadline, amount: '', keypadAmount: '0', selectedCategory: 'meal', selectedCategoryName: '吃饭', categories: [], entries: [], summary: null, keyRows: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'delete'], keyboardVisible: false, closed: false, started: false, ended: false, active: false, daysToStart: 0, saveError: '' },
+  data: { dailyBudget: formatFen(CONFIG.dailyBudget), remaining: formatFen(CONFIG.dailyBudget), deadline: CONFIG.deadline, amount: '', keypadAmount: '0', selectedCategory: 'meal', selectedCategoryName: '吃饭', categories: [], entries: [], summary: null, keyRows: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'delete'], keyboardVisible: false, closed: false, started: false, ended: false, active: false, daysToStart: 0, saveError: '', allowanceNotice: '', todos: [] },
   onLoad() {
     this.unsubscribe = store.subscribe(() => this.refresh());
     this.refresh();
+  },
+  // 今日待办：tab 栏红点那个数字，就是这张清单的长度。红点只给数字没人看得懂，
+  // 所以把「它在提示什么」在今日页顶上逐条列出来 —— 谁都能立刻知道自己还差哪一步。
+  // 口径与 app.js 的角标逐条对应（划额 / 结算 / 待登记工资 / 待登记生活费），
+  // 不会出现「红点说有 2 件事、打开却对不上」这种情况。
+  pendingTodos(state, today) {
+    const todos = [];
+    if (!isPlanActive(today, state.config.startDate, state.config.deadline)) return todos;
+    const settle = store.previewSettlement(today);
+    if (settle.blocked === 'not_allocated') {
+      todos.push({ key: 'allocate', text: '早间划额：今天还没把额度从余额宝划进工资卡' });
+    } else if (!settle.blocked && !settle.alreadyClosed && !settle.batchPending) {
+      todos.push({ key: 'settle', text: '晚间结算：今天的账还没结，没花完的额度要退回余额宝' });
+    }
+    const periods = state.periods || [];
+    if (periods.some(item => !item.salaryReceived && today >= item.payDate)) {
+      todos.push({ key: 'salary', text: '工资到账还没登记：到「发薪日」页登记' });
+    }
+    const pending = periods.filter(item => item.salaryReceived && !item.allowanceReceived && today >= item.allowanceExpectedDate);
+    if (pending.length) {
+      const first = pending[0];
+      todos.push({
+        key: 'allowance',
+        text: `第 ${first.index} 期生活费还没登记：预计 ${first.allowanceExpectedDate} 到账 ¥${formatFen(first.allowance)}，`
+          + (today > first.rangeEnd ? '本期区间已过，到「发薪日」页用「实际到账日」补登' : '到账后到「发薪日」页登记')
+      });
+    }
+    return todos;
   },
   // 小程序切后台/跨天时重新进入必须重算“今天”，否则会继续显示昨天的额度与封账状态。
   onShow() { this.refresh(); },
@@ -42,13 +70,22 @@ Page({
       adjust: totals.adjustFen ? `${totals.adjustFen < 0 ? '−' : '+'}¥${formatFen(Math.abs(totals.adjustFen))}` : '',
       count: totals.count
     };
-    // 两段到账提醒：工资已登记、生活费过了预计日还没登记，就在今日页顶上提示一次。
-    const currentPeriod = (state.periods || []).find(item => today >= item.rangeStart && today <= item.rangeEnd) || null;
-    const allowanceNotice = currentPeriod && currentPeriod.salaryReceived && !currentPeriod.allowanceReceived && today >= currentPeriod.allowanceExpectedDate
-      ? `第 ${currentPeriod.index} 期生活费还没登记：预计 ${currentPeriod.allowanceExpectedDate} 到账 ¥${formatFen(currentPeriod.allowance)}，到账后去发薪日页登记`
+    // 两段到账提醒：工资已登记、生活费过了预计日还没登记，就在今日页顶上提示。
+    // 必须扫全部五期，不能只看今天所属的那一期：生活费漏登是会跨期的 ——
+    // 第 1 期的 ¥2,000 没登记、人已经走进第 2 期时，只查当前期就一条提醒都不会出，
+    // 这笔钱会静默地从储蓄目标里消失（实测过）。多期都欠时按逾期最久的先提醒。
+    const pendingAllowance = (state.periods || [])
+      .filter(item => item.salaryReceived && !item.allowanceReceived && today >= item.allowanceExpectedDate)
+      .sort((a, b) => a.index - b.index)[0] || null;
+    const allowanceNotice = pendingAllowance
+      ? `第 ${pendingAllowance.index} 期生活费还没登记：预计 ${pendingAllowance.allowanceExpectedDate} 到账 ¥${formatFen(pendingAllowance.allowance)}，`
+        + (today > pendingAllowance.rangeEnd
+          ? `本期区间已在 ${pendingAllowance.rangeEnd} 结束，请到发薪日页选第 ${pendingAllowance.index} 期、用「实际到账日」补登`
+          : '到账后去发薪日页登记')
       : '';
     const left = remainingDailyBudget(state.ledger.expenses, today, state.config.dailyBudget);
-    this.setData({ dailyBudget: formatFen(state.config.dailyBudget), remaining: formatFen(left), deadline: state.config.deadline, categories: state.categories, entries, summary, closed: !!(state.daySlots[today] && state.daySlots[today].closed), started, ended, active, allowanceNotice, daysToStart: Math.max(0, daysUntil(state.config.startDate)) });
+    const todos = this.pendingTodos(state, today);
+    this.setData({ dailyBudget: formatFen(state.config.dailyBudget), remaining: formatFen(left), deadline: state.config.deadline, categories: state.categories, entries, summary, closed: !!(state.daySlots[today] && state.daySlots[today].closed), started, ended, active, allowanceNotice, todos, daysToStart: Math.max(0, daysUntil(state.config.startDate)) });
   },
   selectCategory(event) { this.setData({ selectedCategory: event.currentTarget.dataset.category, selectedCategoryName: event.currentTarget.dataset.name, keyboardVisible: true }); },
   openKeyboard() { this.setData({ keyboardVisible: true }); },

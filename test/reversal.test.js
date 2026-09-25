@@ -13,7 +13,9 @@ const expenseId = state => state.ledger.expenses.find(item => !item.reversalOf).
 function openBatch({ amountYuan = 70, mode = 'daily' } = {}) {
   useMemoryStorage();
   store.reset();
-  if (mode === 'three-day') store.setMode('three-day');
+  // 显式给 asOfDate：setMode 的三日网格校验（daysFrom(startDate, asOfDate) % 3 === 0）
+  // 挂在真实今天上会让这条测试在每 3 天里有 2 天变红。
+  if (mode === 'three-day') store.setMode('three-day', D);
   store.allocateDay({ date: D });
   store.addExpense({ date: D, category: 'meal', amountYuan });
   return expenseId(store.getState());
@@ -137,12 +139,12 @@ test('验收：误记 70（其实 40）→ 冲正 → 补记 40 → 下一批次
 test('切过模式后冲正旧批次，不会把三日批次改成单日批次（不得提前退款）', () => {
   useMemoryStorage();
   store.reset();
-  store.setMode('three-day');
+  store.setMode('three-day', D);                            // 显式给日期，别依赖真实今天
   store.allocateDay({ date: D });
   store.addExpense({ date: D, category: 'meal', amountYuan: 30 });
   store.addExpense({ date: '2026-09-25', category: 'meal', amountYuan: 20 });
   assert.equal(store.settleDay({ date: '2026-09-26' }).transfer.amount, 11557, '批次第三天结算，退 115.57');
-  store.setMode('daily');                                   // 之后改回每日结算
+  store.setMode('daily', '2026-09-27');                     // 之后改回每日结算
   const id = expenseId(store.getState());
   const done = store.reverseExpense({ id, asOfDate: '2026-09-28' });
   assert.equal(done.trueUp.amount, 3000, '误记的 30 元补退回余额宝');

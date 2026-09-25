@@ -25,7 +25,15 @@ Page({
   refresh() {
     const state = store.getState();
     const periodList = state.periods && state.periods.length ? state.periods : derivePeriods();
-    const periods = periodList.map(item => ({ ...item, save: formatFen(item.saveToPocket), pocket: formatFen(item.pocketAfter), budget: formatFen(item.budgetToPool), bill: formatFen(item.billTotal) }));
+    // 轨迹卡：save 念真实转存额（savePlaced），计划值单列。早先 save 取 saveToPocket，
+    // 而它在两笔没到齐时等于计划值 —— 和上一张卡「本期预算池」是同一个毛病，一起改掉。
+    const periods = periodList.map(item => ({
+      ...item,
+      save: formatFen(item.savePlaced),
+      planSaveText: formatFen(item.planSave),
+      pocket: formatFen(item.pocketAfter),
+      bill: formatFen(item.billTotal)
+    }));
     const today = todayKey();
     const current = periodForDate(today, periodList);
     // 计划尚未开始或已全部结束时不再展示“本期”，否则会拿第 1 期的数据冒充当前周期。
@@ -58,9 +66,22 @@ Page({
       selectedDate: this.data.selectedDate && series.some(day => day.date === this.data.selectedDate) ? this.data.selectedDate : '',
       current: {
         ...current,
-        budget: formatFen(current.budgetToPool),
+        // 「本期预算池」必须是真实进了余额宝的钱，不能一律显示计划值：
+        // 两段到账后工资日只入了一部分（例如 ¥1455.68），剩下的要等生活费日补，
+        // 早先这里恒显示 budgetToPool（未到齐时 = 计划 ¥1600.51），页面看着像钱已经到位了。
+        // 与发薪日页同一个写法：真实值在前、计划值在后（1455.68 / 1600.51）。
+        budget: formatFen(current.poolPlaced),
+        budgetPlan: formatFen(current.budgetToPool),
+        budgetFull: current.poolPlaced >= current.budgetToPool,
+        budgetPending: current.pendingPool > 0 ? formatFen(current.pendingPool) : '',
         spent: formatFen(spent),
-        left: formatFen(current.budgetToPool - spent),
+        // 「预计余粮」必须和上面那张卡的预算池同源：池子里**实际**有多少钱减去已经花掉的。
+        // 早先拿计划池额减，于是「本期预算池 1455.68 / 1600.51」下面直接写着「预计余粮 1600.51」——
+        // 同一张卡自己打自己。另外给出「两笔到齐后」的计划口径，免得用户以为少了钱。
+        left: formatFen(current.poolPlaced - spent),
+        leftPlanNote: current.pendingPool > 0
+          ? `池子里还差 ¥${formatFen(current.pendingPool)} 没进（生活费到账后补上），那时预计余粮 ¥${formatFen(current.budgetToPool - spent)}`
+          : '',
         modeText: mode === 'three-day' ? '三天一结' : '每日结算',
         allocation: formatFen(allocation),
         barMinWidth: current.days * 34,

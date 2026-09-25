@@ -4,10 +4,12 @@
   <view wx:if="{{!current}}" class="card"><view class="caption">{{started ? "五期计划已于 " + lastEnd + " 全部结束" : "计划尚未开始，第一期从 " + startDate + " 起算"}}</view></view>
 
   <view wx:if="{{current}}" class="card">
-    <view class="caption">本期预算池</view>
-    <view class="amount">¥ {{current.budget}}</view>
+    <view class="caption">本期预算池<text wx:if="{{!current.budgetFull}}">　·　实际入池 / 计划</text></view>
+    <view class="amount">¥ {{current.budget}}<text wx:if="{{!current.budgetFull}}" class="amount-plan"> / ¥{{current.budgetPlan}}</text></view>
+    <view wx:if="{{current.budgetPending}}" class="caption">还差 ¥{{current.budgetPending}} 没进池子，生活费到账后补上（发薪日页可以自己决定补多少）</view>
     <view class="list-row"><text>已记支出</text><text class="value">¥{{current.spent}}</text></view>
     <view class="list-row"><text>预计余粮</text><text class="value">¥{{current.left}}</text></view>
+    <view wx:if="{{current.leftPlanNote}}" class="caption">{{current.leftPlanNote}}</view>
     <view class="caption">{{current.rangeStart}} → {{current.rangeEnd}}　·　{{current.days}} 天</view>
     <button class="button secondary" bindtap="openPeriodLedger">查看本期全部流水</button>
   </view>
@@ -61,7 +63,7 @@
         <view><view>第 {{item.index}} 期</view><view class="secondary-text">{{item.payDate}}　·　{{item.days}} 天</view></view>
         <view class="value">¥ {{item.save}}</view>
       </view>
-      <view class="caption">累计储蓄 ¥{{item.pocket}}　·　账单 ¥{{item.bill}}</view>
+      <view class="caption">本期实际转存 ¥{{item.save}}　·　本期计划 ¥{{item.planSaveText}}　·　累计储蓄（计划）¥{{item.pocket}}　·　账单 ¥{{item.bill}}</view>
     </view>
   </block>
 </view>

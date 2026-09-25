@@ -109,7 +109,8 @@ test('发薪执行和专项支出会写入可追溯流水', () => {
   assert.equal(store.executePayday(1, '2026-09-23').blocked, 'not_reached');
   const payday = store.executePayday(1, '2026-09-24');
   assert.equal(payday.state.ledger.transfers.filter(item => item.kind === 'payday_save').length, 1);
-  assert.equal(store.executePayday(1).alreadyExecuted, true);
+  // 必须显式给 asOfDate：不给就用真实今天，2027-02-05 之后账本只读，这里会变成 blocked:'ended'
+  assert.equal(store.executePayday(1, '2026-09-24').alreadyExecuted, true);
   store.addSpecial({ date: '2026-12-25', reason: 'Q4水电', amountYuan: 405.88 });
   assert.equal(store.getState().ledger.specials[0].amount, 40588);
 });
@@ -151,7 +152,7 @@ test('当天花 30 元会把 25.19 元退回预算池', () => {
 test('三天一结前两天不退款，第三天按批次退款', () => {
   global.wx = { getStorageSync: () => null, setStorageSync: () => {}, removeStorageSync: () => {} };
   store.reset();
-  store.setMode('three-day');
+  store.setMode('three-day', '2026-09-24');   // 必须显式给日期：不给就挂在真实今天上，只有网格日才切得动
   store.allocateDay({ date: '2026-09-24' });
   store.addExpense({ date: '2026-09-24', category: 'meal', amountYuan: 30 });
   store.addExpense({ date: '2026-09-25', category: 'meal', amountYuan: 20 });
@@ -212,7 +213,7 @@ test('撤销封账会先撤销该批次的退款，再结算不会重复退回�
 test('三天一结按批次额度判断超支，不再按单日额度补差', () => {
   useMemoryStorage();
   store.reset();
-  store.setMode('three-day');
+  store.setMode('three-day', '2026-09-24');   // 同上：显式给日期，别依赖真实今天正好是三日网格日
   store.executePayday(1, '2026-09-24');
   store.allocateDay({ date: '2026-09-24' });
   store.addExpense({ date: '2026-09-24', category: 'meal', amountYuan: 80 });

@@ -362,6 +362,8 @@ function periodSweptFen(current, periodIndex) {
 
 // 六个动作的完成状态：1 工资到账、2 生活费到账、3 还账单、4 入池、5 转存、6 清理余粮。
 // 前五项在两笔收入都安置完之后必然全为真；只认流水，不认手勾。
+// 3/4/5 步一律用「目标已达成 且 目标本身大于 0」判定，目标取 period.pendingXxx 的同一份口径，
+// 所以 done[i] <=> pendingXxx === 0，页面文案（分母也是这个目标）永远不会和勾互相打脸。
 function paydayStepStatus(current, periodIndex) {
   const period = (current.periods || [])[periodIndex - 1];
   if (!period) return { done: [false, false, false, false, false, false], transferDone: false, allDone: false, sweptFen: 0, fullyFunded: false };
@@ -369,9 +371,9 @@ function paydayStepStatus(current, periodIndex) {
   const done = [
     period.salaryReceived,
     period.allowanceReceived,
-    period.billPlaced >= period.planBill,
-    period.poolPlaced >= period.budgetToPool,
-    period.savePlaced >= period.saveToPocket,
+    period.pendingBill === 0 && period.billTotal > 0,
+    period.pendingPool === 0 && period.budgetToPool > 0,
+    period.pendingSave === 0 && period.saveToPocket > 0,
     sweptFen > 0
   ];
   return { done, transferDone: done.slice(0, 5).every(Boolean), allDone: done.every(Boolean), sweptFen, fullyFunded: Boolean(period.fullyFunded) };
@@ -389,90 +391,184 @@ function togglePaydayStep(periodIndex, step, asOfDate = todayKey()) {
   return { state: current, persisted: true, blocked: 'derived_step', periodIndex: Number(periodIndex), step: Number(step) };
 }
 
+// 用户自选安置：{ billYuan, poolYuan, saveYuan } 是页面输入框给的原始「元」值。
+// 换算只走 domain/money 一处；三项都必须是非负整数分，合计必须**正好等于**这笔到账金额，
+// 且还账单不得超过本期还没还清的部分（账单是外部固定义务，不能多还）。
+// 不给 split 就用 placementFor 的推荐值（账单 → 预算池 → 储蓄），旧调用方与测试一律不受影响。
+// 校验放在 store 而不是页面：页面只是草稿，钱要落账必须以这里的裁决为准。
+function resolveSplit(split, amount, period) {
+  if (split === undefined || split === null) return { placements: placementFor(period, amount) };
+  const placements = { bill: 0, pool: 0, save: 0 };
+  for (const key of ['bill', 'pool', 'save']) {
+    const raw = split[`${key}Yuan`];
+    if (raw === undefined || raw === null || raw === '') continue;
+    const fen = toFenOrNull(raw);
+    if (fen === null || fen < 0) return { blocked: 'bad_split' };
+    placements[key] = fen;
+  }
+  const total = placements.bill + placements.pool + placements.save;
+  if (total !== amount) return { blocked: 'split_mismatch', splitTotal: total, amount, diff: amount - total };
+  const billRoom = Math.max(0, period.billTotal - period.billPlaced);
+  if (placements.bill > billRoom) return { blocked: 'bill_over', billRoom };
+  return { placements };
+}
+
 // 一次到账的安置：先写收入流水，再按「账单 → 预算池 → 储蓄」的顺序写划转。
-// 只安置这次到账的钱：缺口补满就停，剩下的全部进小荷包，金额恒为正。
-function placementTransfers(period, index, { kind, amount, date, incomeId }) {
-  const placements = placementFor(period, amount);
+// 金额恒为正（为 0 的那一项不写流水）；placements 由 resolveSplit 决定，可能是推荐值也可能是用户自选。
+// arrivalId 是「这一笔到账」的主键：收入流水带自己的 id，每一笔安置流水（还账单/入池/转存）
+// 都记下 arrivalId 指向它。撤销时整组一起删，不会误伤同一天别的手工划转 ——
+// 这是唯一能把「这笔到账连同它的安置」精确摘出来的办法，按日期或按 kind 都会误伤。
+function placementTransfers(period, index, { kind, amount, date, incomeId, placements, arrivalId }) {
   const income = createTransfer({ id: incomeId, date, from: ACCT.OUT, to: ACCT.BANK1, amount, kind });
   income.periodIndex = index;
   const transfers = [income];
+  const attach = item => { item.periodIndex = index; item.arrivalId = arrivalId; };
   if (placements.bill > 0) {
     const item = createTransfer({ id: uid('bill'), date, from: ACCT.BANK1, to: ACCT.BILL, amount: placements.bill, kind: 'bill_repay' });
-    item.periodIndex = index;
+    attach(item);
     transfers.push(item);
   }
   if (placements.pool > 0) {
     const item = createTransfer({ id: uid('budget'), date, from: ACCT.BANK1, to: ACCT.POOL2, amount: placements.pool, kind: 'payday_budget' });
-    item.periodIndex = index;
+    attach(item);
     transfers.push(item);
   }
   if (placements.save > 0) {
     const item = createTransfer({ id: uid('save'), date, from: ACCT.BANK1, to: ACCT.POCKET3, amount: placements.save, kind: 'payday_save' });
-    item.periodIndex = index;
+    attach(item);
     transfers.push(item);
   }
   return { transfers, placements };
 }
 
+// 期次越界一律返回 null，由调用方转成 { blocked: 'bad_period' }：
+// store 的对外入口统一「返回 blocked，不抛异常」，页面才不需要包 try/catch。
 function periodAt(current, periodIndex) {
   const index = Number(periodIndex);
-  const period = (current.periods || [])[index - 1];
-  if (!period) throw new RangeError('unknown payday period');
-  return period;
+  if (!Number.isInteger(index) || index < 1) return null;
+  return (current.periods || [])[index - 1] || null;
 }
 
+// YYYY-MM-DD 光看格式挡不住 2026-09-31 这种不存在的日子：往日历里往返一趟，回不来就是假日期。
+// 假日期会被 resolveBatchRange 当成一个真实批次，把 daySlots 和结算口径一起带歪。
+// 校验通过就返回规范化的 YYYY-MM-DD 字符串，否则返回 null：
+// 后面的区间比较一律用这个返回值，避免调用方传进 String 对象之类让比较口径漂移。
+function realDateOr(date) {
+  const text = String(date === undefined || date === null ? '' : date);
+  if (!DATE_ONLY_RE.test(text)) return null;
+  try { return dateKey(parseDate(text)) === text ? text : null; } catch (error) { return null; }
+}
+
+// 两段登记各自的「纯规划」部分：只判断能不能登记、要写哪几笔流水，绝不落盘。
+// 写入入口（registerSalaryDay / registerAllowance）与兼容入口（executePayday）共用同一份规划，
+// 这样「同日到账」也能在一次 commit 里原子落地，预览与写入不可能变成两套算法。
+
 // 工资日登记：业务日期固定在发薪日（工资何时到账是确定的），不允许早于发薪日预登记。
-function registerSalaryDay(periodIndex = 1, asOfDate = todayKey()) {
-  const current = getState();
+function planSalaryDay(current, periodIndex, asOfDate, split) {
   const period = periodAt(current, periodIndex);
-  const index = period.index;
+  if (!period) return { blocked: 'bad_period' };
   // 计划截止日后账本只读：不得再补登任何一期发薪日。
-  if (planOperationBlock(current, asOfDate) === 'ended') {
-    return { state: current, persisted: true, blocked: 'ended', payDate: period.payDate };
-  }
-  if (period.salaryReceived) return { state: current, persisted: true, alreadyReceived: true, alreadyExecuted: true, payDate: period.payDate };
-  if (period.payDate > asOfDate) return { state: current, persisted: true, blocked: 'not_reached', payDate: period.payDate };
-  const { transfers, placements } = placementTransfers(period, index, {
-    kind: 'payday_income', amount: period.salary, date: period.payDate, incomeId: `pay_in_${index}`
+  if (planOperationBlock(current, asOfDate) === 'ended') return { blocked: 'ended', payDate: period.payDate };
+  if (period.salaryReceived) return { alreadyReceived: true, payDate: period.payDate };
+  if (period.payDate > asOfDate) return { blocked: 'not_reached', payDate: period.payDate };
+  const resolved = resolveSplit(split, period.salary, period);
+  if (resolved.blocked) return { blocked: resolved.blocked, payDate: period.payDate, ...resolved };
+  const placed = placementTransfers(period, period.index, {
+    kind: 'payday_income', amount: period.salary, date: period.payDate,
+    incomeId: `pay_in_${period.index}`, placements: resolved.placements, arrivalId: `pay_in_${period.index}`
   });
-  const next = {
-    ...current,
-    executedPaydays: { ...current.executedPaydays, [index]: true },
-    ledger: { ...current.ledger, transfers: [...current.ledger.transfers, ...transfers] }
+  return {
+    ...placed,
+    payDate: period.payDate,
+    next: {
+      ...current,
+      executedPaydays: { ...current.executedPaydays, [period.index]: true },
+      ledger: { ...current.ledger, transfers: [...current.ledger.transfers, ...placed.transfers] }
+    }
   };
-  return { ...commit(refreshPeriods(next)), placements, payDate: period.payDate, salaryReceived: true };
 }
 
 // 生活费登记：金额固定 2,000；必须先登记工资（生活费不会早于工资日到），
 // 到账日期可选（默认今天，落在本期区间内、且不能晚于今天），到账当天登记后自动补足预算池并转存余额。
-function registerAllowance(periodIndex = 1, { date = todayKey(), asOfDate = todayKey() } = {}) {
-  const current = getState();
+function planAllowance(current, periodIndex, { date, asOfDate, split }) {
   const period = periodAt(current, periodIndex);
-  const index = period.index;
+  if (!period) return { blocked: 'bad_period' };
   const block = planOperationBlock(current, asOfDate);
-  if (block) return { state: current, persisted: true, blocked: block, payDate: period.payDate };
-  if (!DATE_ONLY_RE.test(String(date || ''))) return { state: current, persisted: true, blocked: 'bad_date' };
-  if (period.allowanceReceived) return { state: current, persisted: true, alreadyReceived: true, payDate: period.payDate };
-  if (!period.salaryReceived) return { state: current, persisted: true, blocked: 'salary_pending', payDate: period.payDate };
-  if (date < period.payDate || date > period.rangeEnd) return { state: current, persisted: true, blocked: 'outside_range', payDate: period.payDate, rangeEnd: period.rangeEnd };
-  if (date > asOfDate) return { state: current, persisted: true, blocked: 'not_reached', payDate: period.payDate };
-  const { transfers, placements } = placementTransfers(period, index, {
-    kind: 'allowance_income', amount: CONFIG.monthlyAllowance, date, incomeId: `allow_${index}`
+  if (block) return { blocked: block, payDate: period.payDate };
+  const day = realDateOr(date);
+  if (!day) return { blocked: 'bad_date', payDate: period.payDate };
+  if (period.allowanceReceived) return { alreadyReceived: true, payDate: period.payDate };
+  if (!period.salaryReceived) return { blocked: 'salary_pending', payDate: period.payDate };
+  if (day < period.payDate || day > period.rangeEnd) {
+    return { blocked: 'outside_range', payDate: period.payDate, rangeEnd: period.rangeEnd };
+  }
+  if (day > asOfDate) return { blocked: 'not_reached', payDate: period.payDate };
+  const resolved = resolveSplit(split, CONFIG.monthlyAllowance, period);
+  if (resolved.blocked) return { blocked: resolved.blocked, payDate: period.payDate, ...resolved };
+  const placed = placementTransfers(period, period.index, {
+    kind: 'allowance_income', amount: CONFIG.monthlyAllowance, date: day,
+    incomeId: `allow_${period.index}`, placements: resolved.placements, arrivalId: `allow_${period.index}`
   });
-  const next = { ...current, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, ...transfers] } };
-  return { ...commit(refreshPeriods(next)), placements, payDate: period.payDate, allowanceDate: date, allowanceReceived: true };
+  return {
+    ...placed,
+    payDate: period.payDate,
+    allowanceDate: day,
+    next: { ...current, ledger: { ...current.ledger, transfers: [...current.ledger.transfers, ...placed.transfers] } }
+  };
+}
+
+// 工资日登记：写「工资到账 + 还账单 + 入池 +（够的话）转存」，业务日期固定在发薪日。
+// split 缺省 = 按推荐安置；给了就以用户填的为准（store 会重新校验合计与账单上限）。
+function registerSalaryDay(periodIndex = 1, asOfDate = todayKey(), { split } = {}) {
+  const current = getState();
+  const plan = planSalaryDay(current, periodIndex, asOfDate, split);
+  if (plan.blocked) {
+    return { state: current, persisted: true, blocked: plan.blocked, payDate: plan.payDate, splitTotal: plan.splitTotal, amount: plan.amount, diff: plan.diff, billRoom: plan.billRoom };
+  }
+  if (plan.alreadyReceived) {
+    return { state: current, persisted: true, alreadyReceived: true, alreadyExecuted: true, payDate: plan.payDate };
+  }
+  return { ...commit(refreshPeriods(plan.next)), placements: plan.placements, payDate: plan.payDate, salaryReceived: true };
+}
+
+// 生活费日登记：金额固定 2,000，写「生活费到账 + 补池 +（剩余）转存」，业务日期 = 用户选的真实到账日。
+function registerAllowance(periodIndex = 1, { date = todayKey(), asOfDate = todayKey(), split } = {}) {
+  const current = getState();
+  const plan = planAllowance(current, periodIndex, { date, asOfDate, split });
+  if (plan.blocked) {
+    return { state: current, persisted: true, blocked: plan.blocked, payDate: plan.payDate, rangeEnd: plan.rangeEnd, splitTotal: plan.splitTotal, amount: plan.amount, diff: plan.diff, billRoom: plan.billRoom };
+  }
+  if (plan.alreadyReceived) return { state: current, persisted: true, alreadyReceived: true, payDate: plan.payDate };
+  return {
+    ...commit(refreshPeriods(plan.next)), placements: plan.placements,
+    payDate: plan.payDate, allowanceDate: plan.allowanceDate, allowanceReceived: true
+  };
 }
 
 // 兼容入口：工资与生活费同一天到账时的两步合一（旧调用方与浸泡测试仍可用）。
 // 已经登记过工资的期次不再走这里：生活费另有专用入口，避免把 28 日的到账写成工资日。
+// 两段必须在**同一次 commit** 里落地：早先的实现是「先提交工资、再提交生活费」，
+// 第二段写盘失败时会返回 persisted:false，页面弹「本次改动没有保存」——可工资那几笔其实已经存下来了。
 function executePayday(periodIndex = 1, asOfDate = todayKey()) {
-  const salary = registerSalaryDay(periodIndex, asOfDate);
-  if (salary.blocked || salary.persisted === false) return salary;
-  if (salary.alreadyReceived) return { ...salary, alreadyExecuted: true };
-  const period = periodAt(getState(), periodIndex);
-  const allowance = registerAllowance(periodIndex, { date: period.payDate, asOfDate });
-  if (allowance.blocked || allowance.persisted === false) return allowance;
-  return { ...allowance, alreadyExecuted: false };
+  const current = getState();
+  const salary = planSalaryDay(current, periodIndex, asOfDate, undefined);
+  if (salary.blocked) return { state: current, persisted: true, blocked: salary.blocked, payDate: salary.payDate };
+  if (salary.alreadyReceived) {
+    return { state: current, persisted: true, alreadyReceived: true, alreadyExecuted: true, payDate: salary.payDate };
+  }
+  // 生活费要按「工资落库之后」的期次口径算缺口，所以先在内存里推演一遍（不落盘）。
+  const afterSalary = refreshPeriods(salary.next);
+  const allowance = planAllowance(afterSalary, periodIndex, { date: salary.payDate, asOfDate, split: undefined });
+  // 账本里已经有本期生活费（例如旧口径遗留）时，只补工资这一段，别把工资也一起拦下。
+  if (allowance.alreadyReceived) {
+    return { ...commit(afterSalary), placements: salary.placements, payDate: salary.payDate, salaryReceived: true, alreadyExecuted: false };
+  }
+  if (allowance.blocked) return { state: current, persisted: true, blocked: allowance.blocked, payDate: salary.payDate };
+  const next = { ...afterSalary, ledger: { ...afterSalary.ledger, transfers: [...afterSalary.ledger.transfers, ...allowance.transfers] } };
+  return {
+    ...commit(refreshPeriods(next)), placements: allowance.placements, payDate: salary.payDate,
+    salaryReceived: true, allowanceDate: allowance.allowanceDate, allowanceReceived: true, alreadyExecuted: false
+  };
 }
 
 function addSpecial({ date, reason, amountYuan, note = '' }) {
@@ -726,6 +822,137 @@ function undoRestore() {
   return { ok: true, state: result.state, meta: backupMeta() };
 }
 
+// ---- 回退已登记的到账 ----
+// 「昨天手滑按错了」是真实需求。两段到账一次写 2~5 笔流水（收入 + 安置），
+// 而安置分账单 / 预算池 / 小荷包三个方向，用「冲正」一条条补是补不回来的（冲正只覆盖支出与专项）。
+// 所以这里做整组逻辑删除：撤销之后账本恢复到登记前那个状态，不会留下半截流水。
+//
+// 整组的身份靠 arrivalId：收入流水用自己的 id，每一笔安置流水都记下 arrivalId 指向它。
+// 按日期或按 kind 去猜都会误伤同一天别的手工划转（「用推荐分配」时账单/入池的上下游和手工操作长得一模一样）。
+const ARRIVAL_KINDS = Object.freeze(['bill_repay', 'payday_budget', 'payday_save']);
+
+// 一笔安置流水属不属于这个收入流水：
+//   ① 新流水直接认 arrivalId；
+//   ② 老流水（arrivalId 是后加的字段，之前登记的都没有）按事实认 —— 同一期次、
+//      同一 createdAt（登记是同一毫秒内一批写完的）、同一天、账户流向正好是该 kind 的方向。
+// 只按日期或只看 kind 会误伤当天别的手工划转，这几条一起卡才准。
+const PLACEMENT_FLOW = Object.freeze({
+  bill_repay: { from: 'BANK1', to: 'BILL' },
+  payday_budget: { from: 'BANK1', to: 'POOL2' },
+  payday_save: { from: 'BANK1', to: 'POCKET3' }
+});
+
+function belongsToArrival(item, arrival) {
+  if (item.id === arrival.id) return true;
+  if (item.arrivalId) return item.arrivalId === arrival.id;
+  const flow = PLACEMENT_FLOW[item.kind];
+  if (!flow) return false;
+  return item.periodIndex === arrival.periodIndex
+    && item.date === arrival.date
+    && item.createdAt === arrival.createdAt
+    && item.from === flow.from && item.to === flow.to;
+}
+
+function arrivalGroup(state, arrivalId) {
+  if (!arrivalId) return null;
+  const all = state.ledger.transfers || [];
+  const arrival = all.find(item => item.id === arrivalId);
+  if (!arrival) return null;
+  const members = all.filter(item => belongsToArrival(item, arrival));
+  const dates = members.map(item => item.date).sort();
+  return { arrivalId, kind: arrival.kind, periodIndex: arrival.periodIndex, amount: arrival.amount, start: dates[0], end: dates[dates.length - 1], members };
+}
+
+// 某一期「最后一笔到账」：生活费登记了就撤生活费，否则撤工资。
+function latestArrivalId(period) {
+  if (period.allowanceReceived) return `allow_${period.index}`;
+  if (period.salaryReceived) return `pay_in_${period.index}`;
+  return null;
+}
+
+// 撤销前的检查。硬阻断只留「会把账做坏」的两种，其余一律降级成 warning 如实告诉用户：
+// 划额 / 封账 / 清理余粮 / 已记支出这些**已经消费了这笔钱**的记录，撤销后并不会把复式账做坏
+// （账本合计照样为 0，只是余额宝或工资卡会显示负数），重新登记这笔到账就补齐了。
+// 早先把它们当硬阻断是过度保守：用户昨天按错了、今天已经划过额，就再也退不回去了。
+function arrivalCheck(current, arrivalId, asOfDate = todayKey()) {
+  const group = arrivalGroup(current, arrivalId);
+  if (!group) return { blocked: 'not_found' };
+  const { members, start, end } = group;
+  const memberIds = new Set(members.map(item => item.id));
+  const others = (current.ledger.transfers || []).filter(item => !memberIds.has(item.id));
+
+  // 硬阻断①：收入流水还留着，安置流水却已经被删过（半截状态）——再删一次只会更乱。
+  // 正常账本不会出现（撤销是整组删的），但用户可能手工改过备份再恢复。
+  if (others.some(item => ARRIVAL_KINDS.includes(item.kind) && item.originMissing)) {
+    return { blocked: 'broken_group' };
+  }
+  // 硬阻断②：计划已结束，账本只读。
+  if (planOperationBlock(current, asOfDate) === 'ended') return { blocked: 'ended' };
+
+  const warnings = [];
+  if (others.some(item => item.kind === 'daily_alloc' && item.date >= start)) warnings.push('allocated');
+  if (Object.keys(current.daySlots || {}).some(date => {
+    const slot = current.daySlots[date] || {};
+    return slot.closed && date >= start && date <= end;
+  })) warnings.push('sealed');
+  if (others.some(item => item.kind === 'carry_over' && item.date >= start)) warnings.push('swept');
+  if ((current.ledger.expenses || []).some(item => item.date >= start && item.date <= end)) warnings.push('spent');
+
+  return { group, warnings };
+}
+
+// 页面预览：够不够格回退、回退后会变成什么样、有哪些后果要说清，都在这一个入口里算，
+// 页面不自己判断（页面的按钮只是因为 disabled 而点不动，不是裁决者）。
+function previewArrivalUndo(periodIndex, asOfDate = todayKey()) {
+  const current = getState();
+  const period = (current.periods || [])[Number(periodIndex) - 1];
+  if (!period) return { blocked: 'bad_period' };
+  // 旧版合并入账：一笔写死工资+账单+池+转存，根本没有独立的到账组可以摘，
+  // 撤销入口只能空着 —— 早点说清楚，别让用户以为是页面坏了。
+  if (period.legacyMerged) return { blocked: 'legacy_merged', periodIndex: period.index, payDate: period.payDate };
+  const arrivalId = latestArrivalId(period);
+  if (!arrivalId) return { blocked: 'nothing_to_undo', periodIndex: period.index };
+  const checked = arrivalCheck(current, arrivalId, asOfDate);
+  if (checked.blocked) return { blocked: checked.blocked, periodIndex: period.index };
+  const group = checked.group;
+  return {
+    periodIndex: period.index,
+    arrivalId: group.arrivalId,
+    kind: group.kind,
+    date: group.start,
+    amount: group.amount,
+    placements: group.members.filter(item => item.id !== group.arrivalId)
+      .map(item => ({ id: item.id, kind: item.kind, amount: item.amount })),
+    canUndo: true,
+    warnings: checked.warnings
+  };
+}
+
+function undoArrival(periodIndex, asOfDate = todayKey()) {
+  const current = getState();
+  const period = (current.periods || [])[Number(periodIndex) - 1];
+  if (!period) return { state: current, persisted: true, blocked: 'bad_period' };
+  if (period.legacyMerged) return { state: current, persisted: true, blocked: 'legacy_merged', periodIndex: period.index };
+  const arrivalId = latestArrivalId(period);
+  if (!arrivalId) return { state: current, persisted: true, blocked: 'nothing_to_undo' };
+  const checked = arrivalCheck(current, arrivalId, asOfDate);
+  if (checked.blocked) return { state: current, persisted: true, blocked: checked.blocked, periodIndex: period.index };
+  const memberIds = new Set(checked.group.members.map(item => item.id));
+  const executedPaydays = { ...current.executedPaydays };
+  // 工资那笔被撤了就等于这期没执行过；只撤生活费时 executedPaydays 不该动。
+  if (checked.group.kind === 'payday_income') delete executedPaydays[period.index];
+  const next = {
+    ...current,
+    executedPaydays,
+    ledger: { ...current.ledger, transfers: current.ledger.transfers.filter(item => !memberIds.has(item.id)) }
+  };
+  return {
+    ...commit(refreshPeriods(next)),
+    arrivalId, periodIndex: period.index, kind: checked.group.kind,
+    removed: checked.group.members.length, removedFen: checked.group.amount
+  };
+}
+
 // ---- 第六步「清理上期结余」：余额宝里用不完的余粮真实转进小荷包 ----
 // surplusPlan 同时服务页面显示与实际写入：看到的金额和转走的金额不可能变成两套算法。
 function surplusPlan(current, asOfDate) {
@@ -734,13 +961,18 @@ function surplusPlan(current, asOfDate) {
   const period = periodForDate(asOfDate, current.periods);
   if (!period) return { blocked: 'outside_period' };
   const balances = accountBalances(current.ledger.transfers, current.ledger.expenses, current.openingBalances, current.ledger.specials, current.ledger.adjusts);
-  const { remainingDays, needed, surplus } = poolSurplus({
+  // 生活费还没登记时，预算池还差 allowancePlan.pool 才满，而这笔钱到账时一定会补进来：
+  // 它不该占着「现在必须留在池子里」的名额，否则上一期的真实余粮会被这道缺口吞掉，
+  // 第六步在工资日永远清不出钱（第 1、2 期的缺口分别是 ¥144.83 / ¥647.88）。
+  const pendingPool = period.allowancePlan ? period.allowancePlan.pool : 0;
+  const { remainingDays, needed, reserve, surplus } = poolSurplus({
     poolBalance: balances[ACCT.POOL2], dailyBudget: current.config.dailyBudget, asOfDate, rangeEnd: period.rangeEnd,
-    daySettled: Boolean(((current.daySlots || {})[asOfDate] || {}).closed)
+    daySettled: Boolean(((current.daySlots || {})[asOfDate] || {}).closed), pendingPool
   });
   return {
     periodIndex: period.index, rangeStart: period.rangeStart, rangeEnd: period.rangeEnd, deadline: current.config.deadline,
-    poolBalance: balances[ACCT.POOL2], pocketBalance: balances[ACCT.POCKET3], remainingDays, remainingNeed: needed, surplus
+    poolBalance: balances[ACCT.POOL2], pocketBalance: balances[ACCT.POCKET3], remainingDays, remainingNeed: needed,
+    pendingPool, reserve, surplus
   };
 }
 
@@ -784,4 +1016,4 @@ function removeCategory(id) {
   return commit({ ...current, categories: current.categories.filter(item => item.id !== id) });
 }
 
-module.exports = { getState, newCategoryId, subscribe, addExpense, registerSalaryDay, registerAllowance, previewAllocation, previewSettlement, previewPoolSurplus, sweepPoolSurplus, reverseExpense, reverseSpecial, reverseEntries, previewReversal, settleDay, reopenDay, togglePaydayStep, isPaydayStepDone, paydayStepStatus, periodSweptFen, executePayday, addSpecial, setMode, setScenario, allocateDay, addCategory, removeCategory, addAdjust, reset, backupMeta, markBackedUp, restoreFromBackup, undoRestore };
+module.exports = { getState, newCategoryId, subscribe, previewArrivalUndo, undoArrival, addExpense, registerSalaryDay, registerAllowance, previewAllocation, previewSettlement, previewPoolSurplus, sweepPoolSurplus, reverseExpense, reverseSpecial, reverseEntries, previewReversal, settleDay, reopenDay, togglePaydayStep, isPaydayStepDone, paydayStepStatus, periodSweptFen, executePayday, addSpecial, setMode, setScenario, allocateDay, addCategory, removeCategory, addAdjust, reset, backupMeta, markBackedUp, restoreFromBackup, undoRestore };

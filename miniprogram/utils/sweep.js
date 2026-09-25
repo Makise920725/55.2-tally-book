@@ -6,8 +6,13 @@ const { todayKey } = require('../domain/calendar');
 const write = require('./write');
 
 function describe(preview) {
-  return '余额宝 ¥' + formatFen(preview.poolBalance) + '，第 ' + preview.periodIndex + ' 期剩余 ' + preview.remainingDays
-    + ' 天按计划只需 ¥' + formatFen(preview.remainingNeed)
+  // 两段到账：生活费还没登记时，池子里有一部分名额是「生活费到账后会补进来的」，
+  // 已经先从预留里扣掉，所以上一期的真实余粮在工资日就能清出来，不必等到 28 日。
+  const pending = preview.pendingPool
+    ? '（第 ' + preview.periodIndex + ' 期剩余 ' + preview.remainingDays + ' 天计划开销 ¥' + formatFen(preview.remainingNeed)
+      + '，其中 ¥' + formatFen(preview.pendingPool) + ' 生活费到账后会补进来，现在只需留 ¥' + formatFen(preview.reserve) + '）'
+    : '，第 ' + preview.periodIndex + ' 期剩余 ' + preview.remainingDays + ' 天按计划只需 ¥' + formatFen(preview.remainingNeed);
+  return '余额宝 ¥' + formatFen(preview.poolBalance) + pending
     + '。把多出来的 ¥' + formatFen(preview.surplus) + ' 转进小荷包？转完余额宝只剩本期要用的钱，之后没花完还能再清理。';
 }
 

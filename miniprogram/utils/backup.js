@@ -3,7 +3,7 @@
 // 用它恢复会静默改变退款与补差口径。所以备份走 JSON 全量，恢复前强制校验。
 const { SCHEMA_VERSION } = require('./storage');
 const { ACCT } = require('../domain/ledger');
-const { SCENARIOS, derivePeriods } = require('../domain/plan');
+const { SCENARIOS, derivePeriods, periodIncomeTotals } = require('../domain/plan');
 
 const BACKUP_FORMAT = 'tally-book-backup';
 const BACKUP_FORMAT_VERSION = 1;
@@ -120,6 +120,12 @@ function validateInvariants(state, problems) {
     if (item.from && item.from === item.to) problems.push(`transfers ${item.id} 的转入转出是同一个账户`);
     if (item.kind && !TRANSFER_KINDS.includes(item.kind)) problems.push(`transfers ${item.id} 的划转类型 ${item.kind} 无法识别`);
     if (item.batchKey !== undefined && typeof item.batchKey !== 'string') problems.push(`transfers ${item.id} 的批次标识必须是字符串`);
+    // arrivalId 回指「这一笔到账」的收入流水，撤销整组时靠它精确摘除；指向不存在就说明账本被改坏了。
+    if (item.arrivalId !== undefined) {
+      const arrival = (ledger.transfers || []).find(other => other.id === item.arrivalId);
+      if (!arrival || !item.arrivalId.startsWith(`pay_in_`) && !item.arrivalId.startsWith(`allow_`)) problems.push(`transfers ${item.id} 的 arrivalId ${item.arrivalId} 找不到对应的到账流水`);
+      else if (item.arrivalId === item.id) problems.push(`transfers ${item.id} 的 arrivalId 指向了自己`);
+    }
     // periodIndex 只允许出现在期次流水上且必须是 1..5；两段到账靠它把流水归到正确期次。
     if (item.periodIndex !== undefined) {
       if (!INCOME_KINDS.includes(item.kind)) problems.push(`transfers ${item.id} 是非期次流水，不该带 periodIndex`);
@@ -198,6 +204,18 @@ function validateInvariants(state, problems) {
   });
   Object.keys(allowanceCount).forEach(index => {
     if (allowanceCount[index] > 1) problems.push(`第 ${index} 期登记了 ${allowanceCount[index]} 笔生活费`);
+  });
+  // 每一期「已安置 == 已到账」：工资 + 生活费进来多少，就必须有多少落到
+  // 账单 / 预算池 / 小荷包三者之一。自选安置之后这条尤其要钉住 ——
+  // 页面会校验合计，但备份文件可能被手改过，少了这条就会凭空蒸发或多出一笔钱。
+  const periodTotals = periodIncomeTotals(ledger.transfers || []);
+  Object.keys(periodTotals).forEach(key => {
+    const item = periodTotals[key];
+    const income = item.salaryIn + item.allowanceIn;
+    const placed = item.billPlaced + item.poolPlaced + item.savePlaced;
+    if (income > 0 && placed !== income) {
+      problems.push(`第 ${item.index} 期已安置 ${placed} 分与已到账 ${income} 分对不上`);
+    }
   });
   const incomeByDate = new Set((ledger.transfers || []).filter(item => item.kind === 'payday_income').map(item => item.date));
   Object.keys(state.executedPaydays || {}).forEach(key => {

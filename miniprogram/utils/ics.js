@@ -31,15 +31,21 @@ function exportPaydayIcs(periods) {
         'END:VEVENT'
       );
     }
-    body.push(
-      'BEGIN:VEVENT',
-      `UID:55kuai2-period-${item.index}@tally-book`,
-      `DTSTAMP:${compactDate(item.payDate)}T000000Z`,
-      `DTSTART;VALUE=DATE:${compactDate(item.payDate)}`,
-      `DTEND;VALUE=DATE:${compactDate(nextDay(item.payDate))}`,
-      `SUMMARY:55块2 · 发薪日转存 ¥${(item.saveToPocket / 100).toFixed(2)}`,
-      'END:VEVENT'
-    );
+    // 转存事件：两笔到齐后念**真实**转存额（自选安置可能一分没存，那就不用提醒了）；
+    // 还没到齐时才念计划值，并在文案里写明「计划」，不把计划当成已经发生的事。
+    const funded = item.fullyFunded === true;
+    const savedFen = funded ? (item.savePlaced || 0) : item.saveToPocket;
+    if (!(funded && !savedFen)) {
+      body.push(
+        'BEGIN:VEVENT',
+        `UID:55kuai2-period-${item.index}@tally-book`,
+        `DTSTAMP:${compactDate(item.payDate)}T000000Z`,
+        `DTSTART;VALUE=DATE:${compactDate(item.payDate)}`,
+        `DTEND;VALUE=DATE:${compactDate(nextDay(item.payDate))}`,
+        `SUMMARY:55块2 · ${funded ? '已转存' : '计划转存'} ¥${(savedFen / 100).toFixed(2)}`,
+        'END:VEVENT'
+      );
+    }
   });
   body.push('END:VCALENDAR', '');
   return body.join(EOL);

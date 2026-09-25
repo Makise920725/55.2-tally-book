@@ -7,11 +7,29 @@
 .wx-value { margin-top: 5rpx; }
 .button-complete { background: var(--paper); color: var(--ink); border: 1rpx solid var(--line); }
 .period-picker { margin-bottom: 20rpx; padding: 22rpx 28rpx; border: 1rpx solid var(--line); border-radius: 18rpx; background: var(--card); color: var(--ink-2); }
-/* 第五步不可手勾：标记它来自真实流水，勾不在这里点 */
+/* 第六步不可手勾：标记它来自真实流水，勾不在这里点 */
 .derived-tag { margin-left: 12rpx; padding: 2rpx 12rpx; border: 1rpx solid var(--rule); border-radius: 999rpx; color: var(--dim); font-size: 20rpx; }
 .save-error { border-color: var(--ink); background: var(--ink); }
 .save-error .section-title { margin-bottom: 8rpx; color: #fff; }
 .save-error .caption { color: var(--paper); }
 /* 两段到账：生活费到账后的补池与转存预览 */
 .allowance-hint { margin-top: 16rpx; }
+/* 生活费逾期（本期区间已过还没登记）：提醒用户走日期选择器补登 */
+.allowance-overdue { margin-top: 12rpx; color: var(--ink); font-weight: 600; }
 .date-picker { margin-top: 20rpx; text-decoration: underline; }
+/* 自选安置：三个口袋的分配由用户填，页面当场校验合计，落账仍以 store 的裁决为准 */
+.split-box { margin-top: 24rpx; padding: 24rpx; border: 1rpx solid var(--line); border-radius: 20rpx; background: var(--paper); }
+.split-box .section-title { margin-bottom: 10rpx; }
+.split-row { display: flex; align-items: center; gap: 16rpx; margin-top: 16rpx; }
+.split-label { width: 150rpx; flex-shrink: 0; color: var(--ink-2); font-size: 25rpx; }
+.split-input { flex: 1; padding: 14rpx 18rpx; border: 1rpx solid var(--rule); border-radius: 14rpx; background: var(--card); font-size: 26rpx; text-align: right; font-variant-numeric: tabular-nums; }
+.split-unit { width: 40rpx; flex-shrink: 0; color: var(--dim); font-size: 23rpx; }
+.split-total { margin-top: 20rpx; color: var(--ink); font-size: 26rpx; font-weight: 600; font-variant-numeric: tabular-nums; }
+.split-total.split-bad { color: #a4442c; }
+.split-problem { margin-top: 6rpx; color: #a4442c; }
+.split-note { margin-top: 6rpx; color: var(--ink-2); }
+.split-reset { margin-top: 18rpx; }
+/* 回退已登记的到账：紧跟在步骤列表下面，整组删，先确认；不能回退时这里显示原因 */
+.undo-box { margin-top: 22rpx; padding: 20rpx 22rpx; border: 1rpx dashed var(--rule); border-radius: 18rpx; }
+.undo-hint { margin-top: 0; }
+.undo-button { margin-top: 14rpx; }

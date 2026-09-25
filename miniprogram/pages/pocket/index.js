@@ -40,7 +40,12 @@ Page({
       actualAfter += saved - special;
       return {
       ...item,
-      save: formatFen(item.saveToPocket),
+      // 「本期实际转存」只能念真实写进小荷包的 payday_save（item.savePlaced）。
+      // 早先用的是 saveToPocket，而它在两笔收入没到齐时等于计划值：
+      // 第 3 期只登记工资时真实转存 ¥866.01，页面却写「本期实际转存 ¥2866.01」，
+      // 和同一张卡上的「已执行累计 ¥866.01」当场对不上。计划值单独给一列，两套口径分开摆。
+      save: formatFen(item.savePlaced),
+      planSaveText: formatFen(item.planSave),
       pocket: formatFen(item.pocketAfter),
       special: item.specialOut ? `专项 −¥${formatFen(item.specialOut)}` : '无专项支出',
       actualAfter: formatFen(actualAfter),
@@ -71,7 +76,8 @@ Page({
       pocketAdjustText: totals.adjustFen ? `${totals.adjustFen < 0 ? '−' : '+'} ¥${formatFen(Math.abs(totals.adjustFen))}` : '¥0.00', pocketMatched: netFen === currentFen,
       periods,
       // 余粮卡片只在“还能写账且真有钱可转”时出现；计划结束后只提示钱还留在余额宝
-      surplusCard: surplus.surplus > 0 && !surplus.blocked ? {
+      // 与发薪日页同一个门槛：钱没到齐时池子还差 pendingPool，清了等于提前花生活费。
+      surplusCard: surplus.surplus > 0 && !surplus.blocked && !surplus.pendingPool ? {
         amountText: formatFen(surplus.surplus),
         detail: sweep.describe(surplus),
         hint: surplus.rangeEnd === surplus.deadline

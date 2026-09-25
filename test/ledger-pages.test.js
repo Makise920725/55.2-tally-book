@@ -465,6 +465,28 @@ test('CSV 导出走文件通道，剪贴板只在兜底时使用', () => {
 });
 
 
+test('本期页预算池显示真实入池额，不是固定的计划值', () => {
+  // 今天 = 2026-09-25：工资已登记（只入池 1,455.68），生活费还没到（计划池额 1,600.51）
+  freezeNow(() => {
+    useWx();
+    store.reset();
+    store.registerSalaryDay(1, '2026-09-24');
+    const page = mount('../miniprogram/pages/period/index.js');
+    page.onLoad();
+    assert.equal(page.data.current.budget, '1455.68', '修复前这里恒显示计划值 1600.51，看着像钱已经到位');
+    assert.equal(page.data.current.budgetPlan, '1600.51');
+    assert.equal(page.data.current.budgetFull, false, '没到齐时要显示成「实际 / 计划」');
+    assert.equal(page.data.current.budgetPending, '144.83', '还差多少要写出来，等生活费补');
+    // 用户自选少放余额宝时，这里必须跟着真实流水走
+    store.registerAllowance(1, { date: '2026-09-25', asOfDate: '2026-09-25', split: { billYuan: '0', poolYuan: '0', saveYuan: '2000' } });
+    page.refresh();
+    assert.equal(page.data.current.budget, '1455.68', '生活费全存了小荷包，池子就还是 1,455.68');
+    assert.equal(page.data.current.budgetFull, true, '两笔到齐后目标 = 流水事实，不再显示「/ 计划」');
+    assert.equal(page.data.current.budgetPending, '');
+    page.onUnload();
+  }, [2026, 8, 25, 10, 0, 0]);
+});
+
 test('本期页能给历史上漏划额的那天补划，并接着结算闭环；未来的日子只提示不写账', () => {
   // 今天 = 2026-09-27：09-25 是“过去的某天”，09-30 还没到
   freezeNow(() => {

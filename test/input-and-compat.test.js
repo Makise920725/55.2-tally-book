@@ -145,14 +145,23 @@ test('小程序源码不使用 replaceAll / at(-1) 这类较新 API', () => {
 });
 
 test('ICS 仍然是 RFC 5545 的形状：CRLF、UID、DATE 值不带连字符', () => {
-  const text = exportPaydayIcs([{ index: 1, payDate: '2026-09-24', saveToPocket: 185517 }, { index: 5, payDate: '2027-01-25', saveToPocket: 391513 }]);
+  const text = exportPaydayIcs([
+    { index: 1, payDate: '2026-09-24', saveToPocket: 185517, allowance: 200000, allowanceReceived: true, allowanceExpectedDate: '2026-09-28' },
+    { index: 5, payDate: '2027-01-25', saveToPocket: 391513, allowance: 200000, allowanceReceived: false, allowanceExpectedDate: '2027-01-28' }
+  ]);
   const lines = text.split('\r\n');
   assert.equal(lines[0], 'BEGIN:VCALENDAR');
   assert.equal(lines[lines.length - 1], '');
-  assert.equal(lines.filter(line => line === 'END:VEVENT').length, 2);
+  assert.equal(lines.filter(line => line === 'END:VEVENT').length, 3, '两条发薪日 + 一条未登记的生活费预计到账');
   assert.ok(lines.includes('DTSTART;VALUE=DATE:20260924'), '日期压成 basic 格式');
   assert.ok(lines.includes('DTEND;VALUE=DATE:20260925'), 'DTEND 是次日的独占边界');
   assert.ok(lines.includes('DTSTART;VALUE=DATE:20270125'));
   assert.ok(lines.some(line => line.startsWith('UID:55kuai2-period-1@tally-book')));
+  // 生活费预计到账只在「还没登记」时生成，已登记的第 1 期不该再提醒
+  assert.ok(lines.some(line => line.startsWith('UID:55kuai2-allowance-5@tally-book')));
+  assert.ok(!lines.some(line => line.startsWith('UID:55kuai2-allowance-1@tally-book')), '已登记的生活费不再提醒');
+  assert.ok(lines.includes('DTSTART;VALUE=DATE:20270128'));
+  assert.ok(lines.some(line => line === 'SUMMARY:55块2 · 预计生活费到账 ¥2000.00（到账后登记）'));
   assert.ok(!/-\d{4}-/.test(text), '不允许漏出 YYYY-MM-DD 形式的日期');
+  assert.ok(!lines.some(line => line.startsWith('SUMMARY:') && line.includes(',')), 'SUMMARY 里不能有未转义的逗号');
 });
