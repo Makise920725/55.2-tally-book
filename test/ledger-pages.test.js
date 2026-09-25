@@ -477,12 +477,26 @@ test('本期页预算池显示真实入池额，不是固定的计划值', () =>
     assert.equal(page.data.current.budgetPlan, '1600.51');
     assert.equal(page.data.current.budgetFull, false, '没到齐时要显示成「实际 / 计划」');
     assert.equal(page.data.current.budgetPending, '144.83', '还差多少要写出来，等生活费补');
+    // 预计余粮要和预算池同一个写法：实际 / 全部到齐后（计划池额 − 已记支出）
+    assert.equal(page.data.current.left, '1455.68', '实际：池子里真有多少 − 已花');
+    assert.equal(page.data.current.leftPlan, '1600.51', '全部到齐后：计划池额 − 已花');
+    assert.equal(page.data.current.leftFull, false);
+    // 花掉 1 元：两边各减 1
+    store.addExpense({ date: '2026-09-24', category: 'meal', amountYuan: '1.00' });
+    page.refresh();
+    assert.equal(page.data.current.left, '1454.68');
+    assert.equal(page.data.current.leftPlan, '1599.51', '用户给的例子：1600.51 − 1 = 1599.51');
     // 用户自选少放余额宝时，这里必须跟着真实流水走
     store.registerAllowance(1, { date: '2026-09-25', asOfDate: '2026-09-25', split: { billYuan: '0', poolYuan: '0', saveYuan: '2000' } });
     page.refresh();
     assert.equal(page.data.current.budget, '1455.68', '生活费全存了小荷包，池子就还是 1,455.68');
     assert.equal(page.data.current.budgetFull, true, '两笔到齐后目标 = 流水事实，不再显示「/ 计划」');
     assert.equal(page.data.current.budgetPending, '');
+    // 两笔到齐后「实际」和「全部到齐后」相等，斜杠那半要收起来。
+    // 这里生活费全存了小荷包，池子仍是 1455.68；已花 1 元 → 两边都是 1454.68。
+    assert.equal(page.data.current.leftFull, true);
+    assert.equal(page.data.current.left, '1454.68');
+    assert.equal(page.data.current.leftPlan, '1454.68');
     page.onUnload();
   }, [2026, 8, 25, 10, 0, 0]);
 });

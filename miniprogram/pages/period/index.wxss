@@ -15,6 +15,7 @@
 .day-empty { margin: 12rpx 0 4rpx; }
 .day-action { margin-top: 14rpx; }
 .amount-plan { font-size: 34rpx; color: var(--dim); font-weight: 400; }
+.value-plan { color: var(--dim); font-weight: 400; }
 .day-notice { margin-top: 14rpx; }
 .struck { color: var(--faint); }
 .struck-tag { border-style: dashed; margin-left: 8rpx; }

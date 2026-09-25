@@ -75,13 +75,14 @@ Page({
         budgetFull: current.poolPlaced >= current.budgetToPool,
         budgetPending: current.pendingPool > 0 ? formatFen(current.pendingPool) : '',
         spent: formatFen(spent),
-        // 「预计余粮」必须和上面那张卡的预算池同源：池子里**实际**有多少钱减去已经花掉的。
-        // 早先拿计划池额减，于是「本期预算池 1455.68 / 1600.51」下面直接写着「预计余粮 1600.51」——
-        // 同一张卡自己打自己。另外给出「两笔到齐后」的计划口径，免得用户以为少了钱。
+        // 「预计余粮」和上面那张卡的预算池**同一个写法**：实际值 / 全部到齐后。
+        //   实际值      = 池子里实际有多少钱 − 已经花掉的
+        //   全部到齐后  = 计划池额 − 已经花掉的（两笔到齐、池子补满之后就是这个数）
+        // 早先只拿计划池额减，于是「本期预算池 1455.68 / 1600.51」下面直接写着「预计余粮 1600.51」——
+        // 同一张卡自己打自己。两笔到齐时两者相等，斜杠那半自动隐藏。
         left: formatFen(current.poolPlaced - spent),
-        leftPlanNote: current.pendingPool > 0
-          ? `池子里还差 ¥${formatFen(current.pendingPool)} 没进（生活费到账后补上），那时预计余粮 ¥${formatFen(current.budgetToPool - spent)}`
-          : '',
+        leftPlan: formatFen(current.budgetToPool - spent),
+        leftFull: current.poolPlaced >= current.budgetToPool,
         modeText: mode === 'three-day' ? '三天一结' : '每日结算',
         allocation: formatFen(allocation),
         barMinWidth: current.days * 34,

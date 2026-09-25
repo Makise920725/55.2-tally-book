@@ -8,8 +8,7 @@
     <view class="amount">¥ {{current.budget}}<text wx:if="{{!current.budgetFull}}" class="amount-plan"> / ¥{{current.budgetPlan}}</text></view>
     <view wx:if="{{current.budgetPending}}" class="caption">还差 ¥{{current.budgetPending}} 没进池子，生活费到账后补上（发薪日页可以自己决定补多少）</view>
     <view class="list-row"><text>已记支出</text><text class="value">¥{{current.spent}}</text></view>
-    <view class="list-row"><text>预计余粮</text><text class="value">¥{{current.left}}</text></view>
-    <view wx:if="{{current.leftPlanNote}}" class="caption">{{current.leftPlanNote}}</view>
+    <view class="list-row"><text>预计余粮<text wx:if="{{!current.leftFull}}">（实际 / 全部到齐后）</text></text><text class="value">¥{{current.left}}<text wx:if="{{!current.leftFull}}" class="value-plan"> / ¥{{current.leftPlan}}</text></text></view>
     <view class="caption">{{current.rangeStart}} → {{current.rangeEnd}}　·　{{current.days}} 天</view>
     <button class="button secondary" bindtap="openPeriodLedger">查看本期全部流水</button>
   </view>
